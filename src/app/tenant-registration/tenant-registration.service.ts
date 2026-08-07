@@ -8,7 +8,6 @@ import { MailerService } from '@/common/mailer/mailer.service';
 import { AccessTemplate } from '../access-template/access-template.model';
 import { SubscriptionPlan } from '../subscription-plan/subscription-plan.model';
 import { Tenant } from '../tenant/tenant.model';
-import { seedStandardCatalogForTenant } from '@/common/seed/standard-catalog';
 import { TenantSubscriptionHistory } from '../tenant-subscription-payment/tenant-subscription-history.model';
 import { User } from '../user/user.model';
 import { UserAccess } from '../user-access/user-access.model';
@@ -222,14 +221,12 @@ export class TenantRegistrationService {
 				);
 			}
 
-			// Pre-seed the standard laboratory catalog (groups + categories +
-			// test items) so a fresh tenant starts with the Hinigaran-style
-			// panels wired up. Idempotent + inside the same transaction.
-			try {
-				await seedStandardCatalogForTenant(trx, tenant.uuid, 'auto-seed');
-			} catch (e: any) {
-				this.logger.warn(`Standard catalog auto-seed failed for tenant ${tenant.uuid}: ${e?.message}`);
-			}
+			// Standard laboratory catalog is NOT auto-seeded here — the tenant
+			// admin imports it on demand via Item Groups → Import pre-loaded
+			// catalog (POST /item-group/import-preloaded). This keeps the two
+			// tenant-creation paths (self-registration + super-admin create)
+			// consistent: both land with an empty catalog and the admin picks
+			// what to import.
 
 			// Purge the pending row now that everything's in place.
 			await PendingTenantRegistration.query(trx).delete().where({ uuid: pending.uuid });
