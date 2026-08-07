@@ -1,0 +1,36 @@
+<p style="font-size:16px;margin:0 0 12px">Hi <%= owner_name %>,</p>
+
+<% if (activation_mode === 'scheduled') { %>
+<p style="margin:0 0 12px">Your subscription payment for <strong><%= store_name %></strong> has been <strong>approved</strong>. Because your current plan is still active, the new plan is queued and will activate automatically on <strong><%= subscription_start %></strong>.</p>
+<% } else { %>
+<p style="margin:0 0 12px">Your subscription payment for <strong><%= store_name %></strong> has been <strong>approved</strong> — the plan is <strong>active now</strong>.</p>
+<% } %>
+
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="border-collapse:separate;border-spacing:0;margin:16px 0 20px;background:#f8fafc;border-radius:8px;overflow:hidden;width:100%;max-width:520px">
+	<tr>
+		<td style="padding:10px 16px;color:#64748b;font-size:13px;width:180px">Plan</td>
+		<td style="padding:10px 16px;font-weight:600"><%= plan_name %></td>
+	</tr>
+	<tr>
+		<td style="padding:10px 16px;color:#64748b;font-size:13px;border-top:1px solid #e2e8f0">Amount paid</td>
+		<td style="padding:10px 16px;font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:600;border-top:1px solid #e2e8f0"><%= amount_paid %></td>
+	</tr>
+	<tr>
+		<td style="padding:10px 16px;color:#64748b;font-size:13px;border-top:1px solid #e2e8f0"><%= activation_mode === 'scheduled' ? 'Activates on' : 'Active since' %></td>
+		<td style="padding:10px 16px;border-top:1px solid #e2e8f0"><%= subscription_start %></td>
+	</tr>
+	<tr>
+		<td style="padding:10px 16px;color:#64748b;font-size:13px;border-top:1px solid #e2e8f0">Expires</td>
+		<td style="padding:10px 16px;border-top:1px solid #e2e8f0"><%= subscription_end %></td>
+	</tr>
+	<tr>
+		<td style="padding:10px 16px;color:#64748b;font-size:13px;border-top:1px solid #e2e8f0">Approved by</td>
+		<td style="padding:10px 16px;border-top:1px solid #e2e8f0"><%= approved_by_name %></td>
+	</tr>
+</table>
+
+<p style="margin:24px 0">
+	<a href="<%= login_url %>" style="display:inline-block;padding:12px 20px;background:#4f46e5;color:#ffffff;border-radius:8px;text-decoration:none;font-weight:600">Go to your dashboard</a>
+</p>
+
+<p style="margin:0;color:#64748b;font-size:13px">Thanks for staying with Grocery POS!</p>

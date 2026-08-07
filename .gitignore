@@ -1,0 +1,14 @@
+node_modules
+dist
+logs
+*.log
+.env
+.env.*
+!.env.example
+coverage
+.DS_Store
+public/uploads/
+# Local Claude/agent scratch dir
+.claude/
+# Tesseract English trained data — auto-downloaded on first OCR call.
+eng.traineddata
