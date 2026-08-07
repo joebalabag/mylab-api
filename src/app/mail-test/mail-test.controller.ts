@@ -24,8 +24,8 @@ export class MailTestController {
 	@ApiBody({ type: SendTestMailDTO })
 	async sendTest(@Res() res: Response, @Body() data: SendTestMailDTO) {
 		try {
-			const subject = data.subject ?? 'Grocery POS — test email';
-			const message = data.message ?? 'Hello from grocery-pos-api. If you can read this, SMTP is working.';
+			const subject = data.subject ?? 'MyLab — test email';
+			const message = data.message ?? 'Hello from mylab-api. If you can read this, SMTP is working.';
 			const sent_at = new Date();
 
 			await this.mailer.sendTemplate(data.to, 'test', {

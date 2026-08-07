@@ -11,14 +11,14 @@ export class SendTestMailDTO {
 	@MaxLength(255)
 	to!: string;
 
-	@ApiProperty({ required: false, example: 'Grocery POS — test email' })
+	@ApiProperty({ required: false, example: 'MyLab — test email' })
 	@Transform(emptyToUndef)
 	@IsOptional()
 	@IsString()
 	@MaxLength(200)
 	subject?: string;
 
-	@ApiProperty({ required: false, example: 'Hello from grocery-pos-api!' })
+	@ApiProperty({ required: false, example: 'Hello from mylab-api!' })
 	@Transform(emptyToUndef)
 	@IsOptional()
 	@IsString()

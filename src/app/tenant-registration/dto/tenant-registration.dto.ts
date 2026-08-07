@@ -12,7 +12,7 @@ import {
 const emptyToUndef = ({ value }: { value: any }) => (value === '' ? undefined : value);
 
 export class RegisterTenantDTO {
-	@ApiProperty({ required: true, example: 'MnD Grocery — Main' })
+	@ApiProperty({ required: true, example: 'MnD Diagnostic Lab — Main' })
 	@IsNotEmpty()
 	@IsString()
 	@MaxLength(500)

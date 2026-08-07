@@ -1,5 +1,5 @@
 /**
- * PM2 process config for mycart-api.
+ * PM2 process config for mylab-api.
  *
  *   Start (production):  pm2 start ecosystem.config.js
  *                        pm2 start ecosystem.config.js --env production   (equivalent, explicit)
@@ -54,10 +54,10 @@ module.exports = {
 			time: true,                         // prefix log lines with timestamps
 
 			// Log locations. PM2's defaults (~/.pm2/logs/…) are fine for a first deploy.
-			// Uncomment the two lines below once /var/log/mycart-api exists and is writable
+			// Uncomment the two lines below once /var/log/mylab-api exists and is writable
 			// by the PM2 user (see deployment.md §5).
-			// out_file:   '/var/log/mycart-api/out.log',
-			// error_file: '/var/log/mycart-api/error.log',
+			// out_file:   '/var/log/mylab-api/out.log',
+			// error_file: '/var/log/mylab-api/error.log',
 		},
 	],
 };

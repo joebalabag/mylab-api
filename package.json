@@ -1,7 +1,7 @@
 {
 	"name": "laboratory-api",
 	"version": "0.0.1",
-	"description": "Multi-tenant MyCart POS backend",
+	"description": "Multi-tenant MyLab backend",
 	"author": "",
 	"private": true,
 	"license": "UNLICENSED",

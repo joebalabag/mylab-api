@@ -108,7 +108,7 @@ export class CreateSubscriptionPlanDTO {
 	@MaxLength(255)
 	account_number?: string;
 
-	@ApiProperty({ required: false, example: 'MnD Grocery Corp.', description: 'Payee account name.' })
+	@ApiProperty({ required: false, example: 'MnD Diagnostics Corp.', description: 'Payee account name.' })
 	@Transform(emptyToUndef)
 	@IsOptional()
 	@IsString()

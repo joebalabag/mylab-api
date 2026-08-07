@@ -22,13 +22,13 @@ const SkipIfBlank = () =>
 	ValidateIf((_o, value) => value !== undefined && value !== null && value !== '');
 
 export class CreateTenantDTO {
-	@ApiProperty({ required: true, example: 'MnD Grocery — Main' })
+	@ApiProperty({ required: true, example: 'MnD Diagnostic Lab — Main' })
 	@IsNotEmpty()
 	@IsString()
 	@MaxLength(500)
 	display_name!: string;
 
-	@ApiProperty({ required: false, example: 'MnD Grocery Corp.' })
+	@ApiProperty({ required: false, example: 'MnD Diagnostics Corp.' })
 	@Transform(emptyToUndef)
 	@IsOptional()
 	@IsString()

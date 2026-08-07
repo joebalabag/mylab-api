@@ -21,7 +21,7 @@ import { existsSync, mkdirSync } from 'fs';
 async function bootstrap() {
 	const app = await NestFactory.create<NestExpressApplication>(AppModule, {
 		logger: new ConsoleLogger({
-			prefix: 'GroceryPOS',
+			prefix: 'MyLab',
 			colors: true,
 		}),
 	});
