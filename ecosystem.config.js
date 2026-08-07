@@ -12,12 +12,12 @@
 module.exports = {
 	apps: [
 		{
-			name: 'mycart-api',
+			name: 'mylab-api',
 			// `nest build` in this repo emits to dist/src/main.js because tsconfig.json
 			// doesn't set rootDir — src/ + knexfile.ts + migrations/ + seeds/ share a
 			// common root, so the compiler preserves the src/ prefix.
 			script: 'dist/src/main.js',
-			cwd: '/var/lib/jenkins/workspace/mycart-api',
+			cwd: '/var/lib/jenkins/workspace/mylab-api',
 
 			// One process by default. See "Cluster mode notes" at the bottom of the file
 			// before bumping this: the hourly SUBSCRIPTION_PROMOTION_CRON and per-process
