@@ -17,6 +17,7 @@ export class PatientRequisition extends Model {
 	requisition_number!: string;
 	requisition_date!: Date;
 	notes?: string | null;
+	physician?: string | null;
 
 	subtotal!: number;
 	total!: number;

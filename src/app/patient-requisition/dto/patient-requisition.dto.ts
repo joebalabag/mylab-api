@@ -47,6 +47,13 @@ export class CreatePatientRequisitionDTO {
 	@IsString()
 	@MaxLength(2000)
 	notes?: string;
+
+	@ApiProperty({ required: false, description: 'Referring physician for this requisition. Prints on the lab report header.' })
+	@Transform(emptyToUndef)
+	@IsOptional()
+	@IsString()
+	@MaxLength(255)
+	physician?: string;
 }
 
 export class UpdatePatientRequisitionDTO {
@@ -62,6 +69,13 @@ export class UpdatePatientRequisitionDTO {
 	@IsString()
 	@MaxLength(2000)
 	notes?: string;
+
+	@ApiProperty({ required: false })
+	@Transform(emptyToUndef)
+	@IsOptional()
+	@IsString()
+	@MaxLength(255)
+	physician?: string;
 }
 
 export class SetPatientRequisitionStatusDTO {

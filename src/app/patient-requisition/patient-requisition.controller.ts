@@ -106,6 +106,7 @@ export class PatientRequisitionController {
 				patient_uuid: kase.patient_uuid,
 				requisition_date: data.requisition_date,
 				notes: data.notes,
+				physician: data.physician,
 				created_by: current?.name || current?.username || 'system',
 			});
 			return ApiResponseHelper.sendResponse(res, created, 'Requisition created.');

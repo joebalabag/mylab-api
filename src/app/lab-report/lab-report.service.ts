@@ -25,7 +25,13 @@ export interface LabReportWithMeta extends LabReport {
 	patient_sex?: string | null;
 	patient_birthdate?: Date | string | null;
 	patient_civil_status?: string | null;
+	// Comma-joined single-line address built from the patient's structured
+	// address columns — printed on the lab report header.
+	patient_address?: string | null;
 	requisition_number?: string | null;
+	// Referring physician, snapshotted from the requisition that owns this
+	// lab report. Printed on the report header.
+	physician?: string | null;
 	patient_case_number?: string | null;
 	item_category_color?: string | null;
 	item_category_print_title?: string | null;
@@ -114,7 +120,18 @@ export class LabReportService {
 				'p.sex as patient_sex',
 				'p.birthdate as patient_birthdate',
 				'p.civil_status as patient_civil_status',
+				LabReport.knex().raw(
+					// Empty strings → NULL so CONCAT_WS skips them; result is
+					// NULL (not "") when every part is blank.
+					`NULLIF(CONCAT_WS(', ',
+						NULLIF(p.address_street1, ''),
+						NULLIF(p.address_street2, ''),
+						NULLIF(p.city, ''),
+						NULLIF(p.province, '')
+					), '') AS patient_address`,
+				),
 				'pr.requisition_number as requisition_number',
+				'pr.physician as physician',
 				'pc.case_number as patient_case_number',
 				'ic.color as item_category_color',
 				'ic.print_title as item_category_print_title',
@@ -172,7 +189,18 @@ export class LabReportService {
 				'p.sex as patient_sex',
 				'p.birthdate as patient_birthdate',
 				'p.civil_status as patient_civil_status',
+				LabReport.knex().raw(
+					// Empty strings → NULL so CONCAT_WS skips them; result is
+					// NULL (not "") when every part is blank.
+					`NULLIF(CONCAT_WS(', ',
+						NULLIF(p.address_street1, ''),
+						NULLIF(p.address_street2, ''),
+						NULLIF(p.city, ''),
+						NULLIF(p.province, '')
+					), '') AS patient_address`,
+				),
 				'pr.requisition_number as requisition_number',
+				'pr.physician as physician',
 				'pc.case_number as patient_case_number',
 				'ic.color as item_category_color',
 				'ic.print_title as item_category_print_title',

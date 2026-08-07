@@ -119,6 +119,7 @@ export class PatientRequisitionService {
 		patient_uuid: string;
 		requisition_date?: string | Date;
 		notes?: string | null;
+		physician?: string | null;
 		created_by: string;
 	}): Promise<PatientRequisition> {
 		const knex = PatientRequisition.knex();
@@ -146,6 +147,7 @@ export class PatientRequisitionService {
 				requisition_number,
 				requisition_date: (data.requisition_date as any) ?? new Date(),
 				notes: data.notes ?? null,
+				physician: data.physician ?? null,
 				subtotal: 0,
 				total: 0,
 				status: 'draft',
