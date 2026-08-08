@@ -240,6 +240,25 @@ export class CreateTenantDTO {
 	})
 	@IsOptional()
 	lab_header_image?: any;
+
+	@ApiProperty({
+		required: false,
+		enum: [1, 2],
+		default: 1,
+		description:
+			'Number of tester signatories printed on a lab report. 1 → the finalizer signs (single line). 2 → creator signs slot 1, a credential-verified user signs slot 2 (collapses back to 1 if the resolved user is the same as slot 1).',
+	})
+	// Multipart form fields arrive as strings, so @Type(() => Number)
+	// alone isn't enough — coerce explicitly and let @IsIn match against
+	// the numeric enum.
+	@Transform(({ value }) => {
+		if (value === '' || value === undefined || value === null) return undefined;
+		const n = Number(value);
+		return Number.isFinite(n) ? n : value;
+	})
+	@IsOptional()
+	@IsIn([1, 2])
+	tester_signatory_count?: number;
 }
 
 export class UpdateTenantDTO {
@@ -441,6 +460,19 @@ export class UpdateTenantDTO {
 	})
 	@IsOptional()
 	lab_header_image?: any;
+
+	@ApiProperty({ required: false, enum: [1, 2], description: 'See CreateTenantDTO.tester_signatory_count.' })
+	// Multipart form fields arrive as strings, so @Type(() => Number)
+	// alone isn't enough — coerce explicitly and let @IsIn match against
+	// the numeric enum.
+	@Transform(({ value }) => {
+		if (value === '' || value === undefined || value === null) return undefined;
+		const n = Number(value);
+		return Number.isFinite(n) ? n : value;
+	})
+	@IsOptional()
+	@IsIn([1, 2])
+	tester_signatory_count?: number;
 }
 
 export class SetTenantStatusDTO {

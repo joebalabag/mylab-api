@@ -25,6 +25,14 @@ export class LabReport extends Model {
 	medtech_uuid?: string | null;
 	medtech_name?: string | null;
 	medtech_license?: string | null;
+	// Second tester signatory — only used when the tenant is configured
+	// for tester_signatory_count = 2. Stays null when count = 1, and
+	// also stays null when the count=2 credential ceremony resolves to
+	// the same user as slot 1 (that case collapses to a single printed
+	// signature). See migration 20260809000200 for the data model.
+	medtech2_uuid?: string | null;
+	medtech2_name?: string | null;
+	medtech2_license?: string | null;
 	pathologist_uuid?: string | null;
 	pathologist_name?: string | null;
 	pathologist_license?: string | null;

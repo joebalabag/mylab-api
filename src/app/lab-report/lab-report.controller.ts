@@ -217,9 +217,13 @@ export class LabReportAuthedController {
 			const updated = await this.service.setFinal(uuid, {
 				pathologist_name: data.pathologist_name,
 				pathologist_doctor_uuid: data.pathologist_doctor_uuid,
+				signatory_username: data.signatory_username,
+				signatory_password: data.signatory_password,
 			}, {
 				uuid: current?.uuid,
 				name: current?.name || current?.username || 'system',
+				lab_display_name: current?.lab_display_name ?? null,
+				license_number: current?.license_number ?? null,
 			});
 			return ApiResponseHelper.sendResponse(res, updated, 'Lab report finalized.');
 		} catch (error: any) {

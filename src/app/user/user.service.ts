@@ -193,6 +193,54 @@ export class UserService {
 		};
 	}
 
+	/**
+	 * Lab-report signatory credential check (used by the count=2 finalize
+	 * ceremony). Distinct from {@link verifyCredentials} because:
+	 *   • the eligibility rule is "active user with lab_display_name set",
+	 *     not "admin / manager role",
+	 *   • callers need the resolved user's `lab_display_name` and
+	 *     `license_number` to snapshot onto lab_reports.medtech2_*.
+	 * Same tenant-scoped lookup: usernames are globally unique but we still
+	 * enforce tenant match so cross-tenant credentials can't be used to
+	 * finalize.
+	 */
+	async verifyLabSignatoryCredentials(
+		tenant_uuid: string,
+		username: string,
+		password: string,
+	): Promise<
+		| { verified: false; code: 'invalid' | 'inactive' | 'forbidden'; message: string }
+		| { verified: true; user: { uuid: string; name: string; lab_display_name: string | null; license_number: string | null } }
+	> {
+		const target = (await User.query().findOne({ tenant_uuid, username })) as User | undefined;
+		if (!target) return { verified: false, code: 'invalid', message: 'Invalid credentials.' };
+
+		if ((target.status || '').toLowerCase() !== 'active') {
+			return { verified: false, code: 'inactive', message: `Account is ${target.status}.` };
+		}
+
+		const ok = await this.authService.validatePassword(password, target.passphrase);
+		if (!ok) return { verified: false, code: 'invalid', message: 'Invalid credentials.' };
+
+		if (!target.lab_display_name || !String(target.lab_display_name).trim()) {
+			return {
+				verified: false,
+				code: 'forbidden',
+				message: 'This user has no lab display name configured and cannot sign lab reports.',
+			};
+		}
+
+		return {
+			verified: true,
+			user: {
+				uuid: target.uuid,
+				name: target.name,
+				lab_display_name: target.lab_display_name ?? null,
+				license_number: (target as any).license_number ?? null,
+			},
+		};
+	}
+
 	async changePassword(params: {
 		uuid: string;
 		newPassword: string;

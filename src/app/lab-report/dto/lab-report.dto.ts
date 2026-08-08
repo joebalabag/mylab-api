@@ -207,6 +207,37 @@ export class SetLabReportFinalDTO {
 	@IsOptional()
 	@IsUUID()
 	pathologist_doctor_uuid?: string;
+
+	// ── Tester-signatory (medtech / radtech) credential ceremony ──
+	// Required only when the tenant is configured for
+	// tester_signatory_count = 2. The server verifies these credentials,
+	// checks the resolved user is active and has lab_display_name set,
+	// then stamps medtech2_* — unless the resolved user is the same as
+	// slot 1 (creator), in which case medtech2_* stays null and the
+	// report collapses back to a single printed signature. For count = 1
+	// tenants these fields are ignored and the finalizer's session
+	// identity is stamped into medtech_*.
+	@ApiProperty({
+		required: false,
+		description:
+			'Username of the second tester signatory (count=2 tenants). Required when the tenant is configured for two tester signatories.',
+	})
+	@Transform(emptyToUndef)
+	@IsOptional()
+	@IsString()
+	@MaxLength(255)
+	signatory_username?: string;
+
+	@ApiProperty({
+		required: false,
+		description:
+			'Password of the second tester signatory. Never persisted — used only to authenticate the sign-off.',
+	})
+	@Transform(emptyToUndef)
+	@IsOptional()
+	@IsString()
+	@MaxLength(255)
+	signatory_password?: string;
 }
 
 export class VoidLabReportDTO {

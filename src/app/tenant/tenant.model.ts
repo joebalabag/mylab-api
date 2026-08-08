@@ -51,6 +51,11 @@ export class Tenant extends Model {
 	lab_header_image?: string | null;
 	lab_header_text?: string | null;
 
+	// Number of tester signatories printed on a lab report (1 or 2). See
+	// migration 20260809000100 for the full behavior. Column is
+	// NOT NULL DEFAULT 1 in the DB so this is safe to treat as required.
+	tester_signatory_count!: number;
+
 	// Cached from the latest approved subscription payment
 	current_subscription_plan_uuid?: string | null;
 	current_subscription_days?: number | null;

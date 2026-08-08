@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { transaction as objectionTransaction } from 'objection';
 import { createHmac, timingSafeEqual } from 'crypto';
 
@@ -7,6 +7,7 @@ import { PatientRequisitionItem } from '../patient-requisition/patient-requisiti
 import { TestItem } from '../test-item/test-item.model';
 import { TestItemComponent } from '../test-item/test-item-component.model';
 import { ItemCategory } from '../item-category/item-category.model';
+import { UserService } from '../user/user.service';
 import { applyPagination, PagedResult } from '@/common/helpers/pagination.helper';
 
 import { LabReport, LabReportStatus } from './lab-report.model';
@@ -104,6 +105,8 @@ export interface UncoveredRequisitionItem {
 
 @Injectable()
 export class LabReportService {
+	constructor(private readonly userService: UserService) {}
+
 	async listDashboard(filters: LabReportDashboardQueryDTO): Promise<PagedResult<LabReportWithMeta>> {
 		const query = LabReport.query()
 			.alias('lr')
@@ -524,6 +527,17 @@ export class LabReportService {
 				}
 			}
 
+			// tester_signatory_count = 1 means the finalizer signs (slot 1
+			// filled at setFinal, not now). count = 2 keeps the historical
+			// behavior of stamping the creator into slot 1 immediately so
+			// the printout can show "who started the report" separately
+			// from "who tagged it as final".
+			const tenantRow = await trx('tenants')
+				.where({ uuid: tenant_uuid })
+				.first('tester_signatory_count');
+			const testerCount = Number(tenantRow?.tester_signatory_count ?? 1);
+			const stampCreatorAsSlot1 = testerCount === 2;
+
 			const requisition = (await PatientRequisition.query(trx).findOne({
 				uuid: payload.patient_requisition_uuid,
 				tenant_uuid,
@@ -632,9 +646,12 @@ export class LabReportService {
 					item_category_name: cat?.name ?? null,
 					lab_number,
 					status: 'draft',
-					medtech_uuid: acting_user.uuid ?? null,
-					medtech_name: acting_user.lab_display_name || acting_user.name,
-					medtech_license: acting_user.license_number ?? null,
+					// count=2 stamps the creator into slot 1 up front so the
+					// finalize step captures the second signer. count=1 leaves
+					// slot 1 null; setFinal fills it with whoever tags final.
+					medtech_uuid:    stampCreatorAsSlot1 ? (acting_user.uuid ?? null)                                : null,
+					medtech_name:    stampCreatorAsSlot1 ? (acting_user.lab_display_name || acting_user.name)         : null,
+					medtech_license: stampCreatorAsSlot1 ? (acting_user.license_number ?? null)                       : null,
 					test_items_summary: testNames.join(', '),
 					remarks: group.remarks ?? null,
 					created_by: acting_user.name,
@@ -818,8 +835,15 @@ export class LabReportService {
 
 	async setFinal(
 		lab_report_uuid: string,
-		payload: { pathologist_name?: string; pathologist_doctor_uuid?: string },
-		acting_user: { uuid?: string; name: string },
+		payload: {
+			pathologist_name?: string;
+			pathologist_doctor_uuid?: string;
+			// Second-tester credential ceremony (only used when the tenant
+			// is configured for tester_signatory_count = 2).
+			signatory_username?: string;
+			signatory_password?: string;
+		},
+		acting_user: { uuid?: string; name: string; lab_display_name?: string | null; license_number?: string | null },
 	): Promise<LabReport> {
 		const report = (await LabReport.query().findById(lab_report_uuid)) as unknown as LabReport | undefined;
 		if (!report) throw new BadRequestException('Lab report not found.');
@@ -827,7 +851,71 @@ export class LabReportService {
 			throw new BadRequestException(`Only draft reports can be finalized (current status: ${report.status}).`);
 		}
 
-		// Resolve the signatory. Priority:
+		// ── Tester signatory (medtech) resolution ──────────────────────
+		// count = 1 → the person hitting "Tag as Final" IS the signature;
+		//             stamp slot 1 (medtech_*) from the acting user. Slot
+		//             2 stays null.
+		// count = 2 → the credential ceremony resolves who signs slot 2.
+		//             Slot 1 was already stamped at createBatch (the
+		//             creator). If the resolved user == slot 1, collapse
+		//             back to a single signature (slot 2 stays null).
+		const tenantRow = await LabReport.knex()('tenants')
+			.where({ uuid: report.tenant_uuid })
+			.first('tester_signatory_count');
+		const testerCount = Number(tenantRow?.tester_signatory_count ?? 1);
+
+		const testerPatch: Record<string, any> = {};
+		if (testerCount === 1) {
+			// Refresh acting_user.lab_display_name / license_number the same
+			// way createBatch does — the fields on the session snapshot may
+			// be stale if the user updated their profile mid-session.
+			if (acting_user.uuid && (acting_user.lab_display_name == null || acting_user.license_number == null)) {
+				const u = await LabReport.knex()('users')
+					.where({ uuid: acting_user.uuid })
+					.first('lab_display_name', 'license_number');
+				if (u) {
+					acting_user.lab_display_name = acting_user.lab_display_name ?? u.lab_display_name ?? null;
+					acting_user.license_number   = acting_user.license_number   ?? u.license_number   ?? null;
+				}
+			}
+			testerPatch.medtech_uuid    = acting_user.uuid ?? null;
+			testerPatch.medtech_name    = acting_user.lab_display_name || acting_user.name;
+			testerPatch.medtech_license = acting_user.license_number ?? null;
+			// Always clear slot 2 for count=1 tenants so a report that was
+			// previously finalized under count=2 (then reopened) doesn't
+			// leak an orphan second signature after re-finalization.
+			testerPatch.medtech2_uuid    = null;
+			testerPatch.medtech2_name    = null;
+			testerPatch.medtech2_license = null;
+		} else {
+			// count = 2 — credential ceremony required.
+			if (!payload.signatory_username || !payload.signatory_password) {
+				throw new BadRequestException('A second signatory\'s credentials are required to finalize this report.');
+			}
+			const check = await this.userService.verifyLabSignatoryCredentials(
+				report.tenant_uuid,
+				payload.signatory_username,
+				payload.signatory_password,
+			);
+			if (!check.verified) {
+				// invalid / inactive → 401; forbidden (no lab_display_name) → 400
+				if (check.code === 'forbidden') throw new BadRequestException(check.message);
+				throw new UnauthorizedException(check.message);
+			}
+			if (check.user.uuid === report.medtech_uuid) {
+				// Resolved to slot 1 (creator). Not an error — collapse to
+				// a single printed signature (slot 2 stays null).
+				testerPatch.medtech2_uuid    = null;
+				testerPatch.medtech2_name    = null;
+				testerPatch.medtech2_license = null;
+			} else {
+				testerPatch.medtech2_uuid    = check.user.uuid;
+				testerPatch.medtech2_name    = check.user.lab_display_name || check.user.name;
+				testerPatch.medtech2_license = check.user.license_number ?? null;
+			}
+		}
+
+		// Resolve the pathologist signatory. Priority:
 		//   1. Explicit doctor uuid on the payload → snapshot name/license, link uuid
 		//   2. Explicit pathologist_name on the payload → use verbatim, no license
 		//   3. Item group's default signatory doctor → snapshot name/license, link uuid
@@ -858,6 +946,7 @@ export class LabReportService {
 			finalized_at: now,
 			updated_at: now,
 			updated_by: acting_user.name,
+			...testerPatch,
 		} as any)) as unknown as LabReport;
 	}
 
@@ -877,16 +966,37 @@ export class LabReportService {
 		if (report.status !== 'finalized') {
 			throw new BadRequestException(`Only finalized reports can be un-finalized (current status: ${report.status}).`);
 		}
-		const now = new Date();
-		return (await LabReport.query().patchAndFetchById(lab_report_uuid, {
+		// Tester slot 2 (medtech2_*) was set at finalize; clear it so the
+		// re-finalize path re-runs the credential ceremony. Slot 1 depends
+		// on the tenant's current tester_signatory_count:
+		//   count = 2 → slot 1 was stamped at createBatch (creator);
+		//               preserve it so the "creator" identity survives the
+		//               reopen.
+		//   count = 1 → slot 1 was stamped at finalize (finalizer); clear
+		//               it so the next finalize re-stamps.
+		const tenantRow = await LabReport.knex()('tenants')
+			.where({ uuid: report.tenant_uuid })
+			.first('tester_signatory_count');
+		const testerCount = Number(tenantRow?.tester_signatory_count ?? 1);
+
+		const patch: Record<string, any> = {
 			status: 'draft',
 			pathologist_uuid: null,
 			pathologist_name: null,
 			pathologist_license: null,
 			finalized_at: null,
-			updated_at: now,
+			medtech2_uuid: null,
+			medtech2_name: null,
+			medtech2_license: null,
+			updated_at: new Date(),
 			updated_by: acting_user.name,
-		} as any)) as unknown as LabReport;
+		};
+		if (testerCount === 1) {
+			patch.medtech_uuid    = null;
+			patch.medtech_name    = null;
+			patch.medtech_license = null;
+		}
+		return (await LabReport.query().patchAndFetchById(lab_report_uuid, patch as any)) as unknown as LabReport;
 	}
 
 	/**
