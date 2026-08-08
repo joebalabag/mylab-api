@@ -162,4 +162,36 @@ export class PatientCaseService {
 		}
 		return this.update(uuid, { status, updated_by } as any);
 	}
+
+	/**
+	 * End-of-day bulk close. Sets every OPEN OPD / ER case to `closed`
+	 * and stamps `discharge_date = NOW()` when it's still null. IPD cases
+	 * are left alone because in-patient admissions legitimately span
+	 * multiple days — an operator has to close those manually when the
+	 * patient is actually discharged.
+	 *
+	 * Runs inside the patient-case cron (see patient-case.cron.ts). The
+	 * single UPDATE keeps this atomic even across a busy tenant fleet;
+	 * `updated_by` is stamped with 'system:auto-discharge' so the audit
+	 * trail is obvious.
+	 *
+	 * Returns the number of rows patched.
+	 */
+	async autoCloseOpenDailyCases(): Promise<number> {
+		const knex = PatientCase.knex();
+		const now = new Date();
+		const rows = await knex('patient_cases')
+			.where('status', 'open')
+			.whereIn('case_type', ['OPD', 'ER'])
+			.update({
+				status: 'closed',
+				// Only fill discharge_date when it's still empty — an operator
+				// may have set a specific value earlier in the day; that
+				// choice wins over the automated timestamp.
+				discharge_date: knex.raw('COALESCE(discharge_date, ?)', [now]),
+				updated_at: now,
+				updated_by: 'system:auto-discharge',
+			});
+		return Number(rows || 0);
+	}
 }
