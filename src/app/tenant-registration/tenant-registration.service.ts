@@ -13,7 +13,7 @@ import { User } from '../user/user.model';
 import { UserAccess } from '../user-access/user-access.model';
 import { PendingTenantRegistration } from './pending-tenant-registration.model';
 import { RegisterTenantDTO } from './dto/tenant-registration.dto';
-import { normalizeTimezone } from '@/common/helpers/timezone.helper';
+import { formatReadableDateTime, normalizeTimezone } from '@/common/helpers/timezone.helper';
 
 const TOKEN_TTL_HOURS = 24;
 // Legacy fallback for pending rows created before the plan-picker feature.
@@ -294,7 +294,7 @@ export class TenantRegistrationService {
 		await this.mailer.sendTemplate(to, 'verification', {
 			name,
 			verify_url: `${this.appUrl()}/verify?token=${token}`,
-			expires_at: expires_at.toISOString(),
+			expires_at: formatReadableDateTime(expires_at),
 		});
 	}
 
@@ -312,7 +312,7 @@ export class TenantRegistrationService {
 			username,
 			password,
 			trial_expiry: tenant.current_subscription_expiry
-				? new Date(tenant.current_subscription_expiry).toISOString()
+				? formatReadableDateTime(new Date(tenant.current_subscription_expiry), tenant.timezone)
 				: null,
 			login_url: `${this.appUrl()}/login`,
 		});

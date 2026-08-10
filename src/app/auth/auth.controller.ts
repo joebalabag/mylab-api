@@ -1,13 +1,14 @@
-import { Body, Controller, ForbiddenException, Post, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { ApiResponseHelper } from '@/common/helpers/response.helper';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { LoginDTO } from './dto/login.dto';
 import { UserLoginDTO } from './dto/user-login.dto';
 import { VerifyManagerDTO } from './dto/verify-manager.dto';
+import { ForgotPasswordDTO, ResetPasswordDTO } from './dto/forgot-password.dto';
 import { AuthService } from './auth.service';
 import { Admin } from '../admin/admin.model';
 import { User } from '../user/user.model';
@@ -216,6 +217,74 @@ export class AuthController {
 		} catch (error: any) {
 			console.error(error);
 			return ApiResponseHelper.sendResponse(res, null, error?.message || 'Login failed.', 500);
+		}
+	}
+
+	// ─── Forgot / reset password ────────────────────────────────────────
+	// The forgot-password endpoint deliberately returns generic success even
+	// when the username is unknown, the account is inactive, or the user
+	// has no email on file — same non-enumeration guarantee as the tenant
+	// verification-email resend. Rate-limited per IP to slow down abuse.
+
+	@Post('/forgot-password')
+	@Throttle({ login: { limit: 5, ttl: 60_000 } })
+	@ApiOperation({
+		summary:
+			'Auth - Start a password reset by username. Always returns 200 whether or not the account exists (no enumeration). Rate-limited to 5 attempts per minute per IP.',
+	})
+	@ApiBody({ type: ForgotPasswordDTO })
+	async forgotPassword(@Req() req: Request, @Res() res: Response, @Body() data: ForgotPasswordDTO) {
+		try {
+			const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
+				|| req.socket?.remoteAddress
+				|| null;
+			const ua = (req.headers['user-agent'] as string) || null;
+			await this.authService.requestPasswordReset(data.username, ip, ua);
+			return ApiResponseHelper.sendResponse(
+				res,
+				{ ok: true },
+				"If an account matches that username and has an email on file, a reset link is on its way.",
+			);
+		} catch (error: any) {
+			// Even hard errors get the generic response so timing can't be
+			// used as an enumeration side-channel.
+			console.error('[forgot-password]', error);
+			return ApiResponseHelper.sendResponse(
+				res,
+				{ ok: true },
+				"If an account matches that username and has an email on file, a reset link is on its way.",
+			);
+		}
+	}
+
+	@Get('/reset-password/verify')
+	@Throttle({ login: { limit: 20, ttl: 60_000 } })
+	@ApiOperation({
+		summary:
+			'Auth - Verify a password-reset token without consuming it. Used by the reset page to confirm the link is still valid before showing the new-password form.',
+	})
+	async verifyResetToken(@Res() res: Response, @Query('token') token: string) {
+		try {
+			const check = await this.authService.verifyPasswordResetToken(String(token || ''));
+			return ApiResponseHelper.sendResponse(res, check, 'Token is valid.');
+		} catch (error: any) {
+			return ApiResponseHelper.sendResponse(res, null, error?.message || 'Invalid or expired reset link.', error?.status ?? 400);
+		}
+	}
+
+	@Post('/reset-password')
+	@Throttle({ login: { limit: 5, ttl: 60_000 } })
+	@ApiOperation({
+		summary:
+			'Auth - Set a new password using a reset token. On success, the token is stamped used and the user\'s password is updated. Rate-limited to 5 attempts per minute per IP.',
+	})
+	@ApiBody({ type: ResetPasswordDTO })
+	async resetPassword(@Res() res: Response, @Body() data: ResetPasswordDTO) {
+		try {
+			const result = await this.authService.consumePasswordResetToken(data.token, data.new_password);
+			return ApiResponseHelper.sendResponse(res, result, 'Password updated. You can sign in with the new password now.');
+		} catch (error: any) {
+			return ApiResponseHelper.sendResponse(res, null, error?.message || 'Failed to reset password.', error?.status ?? 400);
 		}
 	}
 }

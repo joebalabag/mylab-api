@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { TenantSubscriptionPaymentModule } from '../tenant-subscription-payment/tenant-subscription-payment.module';
 import { UserAccessModule } from '../user-access/user-access.module';
+import { MailerModule } from '@/common/mailer/mailer.module';
 
 @Module({
 	imports: [
@@ -18,6 +19,7 @@ import { UserAccessModule } from '../user-access/user-access.module';
 		}),
 		TenantSubscriptionPaymentModule,
 		UserAccessModule,
+		MailerModule,
 	],
 	controllers: [AuthController],
 	providers: [AuthService, JwtStrategy],

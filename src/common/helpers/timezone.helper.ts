@@ -40,3 +40,15 @@ export function isValidTimezone(tz: unknown): tz is string {
 export function normalizeTimezone(tz: unknown): string {
 	return isValidTimezone(tz) ? (tz as string) : DEFAULT_TENANT_TIMEZONE;
 }
+
+/**
+ * Human-readable date for user-facing surfaces like emails.
+ * Example: "August 10, 2026 at 11:24 PM PHT"
+ */
+export function formatReadableDateTime(date: Date, tz: string = DEFAULT_TENANT_TIMEZONE): string {
+	return new Intl.DateTimeFormat('en-US', {
+		timeZone: normalizeTimezone(tz),
+		dateStyle: 'long',
+		timeStyle: 'short',
+	}).format(date);
+}
