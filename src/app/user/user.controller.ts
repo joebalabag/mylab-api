@@ -110,6 +110,33 @@ export class UserController {
 		}
 	}
 
+	@Get('/username-available')
+	@ApiOperation({
+		summary: 'User - Check username availability',
+		description:
+			'Lightweight probe used by the create-user form. Returns { available: bool } after a global lookup ' +
+			'(usernames are unique platform-wide). Same manager/admin auth as the rest of user management.',
+	})
+	async usernameAvailable(
+		@Res() res: Response,
+		@Query('username') username: string,
+		@CurrentUser() current: any,
+	) {
+		try {
+			if (current?.type !== 'admin' && !isManagerUser(current)) {
+				throw new ForbiddenException('Requires admin or manager role.');
+			}
+			const u = String(username || '').trim();
+			if (u.length < 3) {
+				return ApiResponseHelper.sendResponse(res, { available: false, reason: 'too_short' });
+			}
+			const taken = await this.service.usernameTaken(u);
+			return ApiResponseHelper.sendResponse(res, { available: !taken });
+		} catch (error: any) {
+			return ApiResponseHelper.sendResponse(res, null, error?.message, error?.status ?? 500);
+		}
+	}
+
 	@Post('/create')
 	@ApiOperation({ summary: 'User - Create' })
 	@ApiBody({ type: CreateUserDTO })
