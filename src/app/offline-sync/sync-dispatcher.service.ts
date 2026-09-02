@@ -56,6 +56,12 @@ export class SyncDispatcherService {
 		try {
 			const row = await this.patients.create({
 				...(entry.payload as any),
+				// Use the client_uuid as the row's server-side uuid. Without this
+				// the server would mint a fresh uuid, and the next /pull would
+				// return the row keyed by that uuid — leaving the client with a
+				// second Dexie row (original client_uuid + new server uuid) for
+				// the same real record. Passing uuid keeps a 1:1 mapping.
+				uuid: entry.client_uuid,
 				tenant_uuid: ctx.tenant_uuid,
 				created_by: ctx.acting_user_name,
 				client_uuid: entry.client_uuid,
@@ -82,6 +88,9 @@ export class SyncDispatcherService {
 			const payload = entry.payload as any;
 			const patient_uuid = await this.resolvePatientUuid(ctx.tenant_uuid, payload.patient_uuid);
 			const row = await this.cases.create({
+				// See uuid comment in syncPatient — same reason: keep the local
+				// Dexie row and the server row on a single primary key.
+				uuid: entry.client_uuid,
 				tenant_uuid: ctx.tenant_uuid,
 				patient_uuid,
 				case_type: payload.case_type,
@@ -116,6 +125,9 @@ export class SyncDispatcherService {
 			const patient_case_uuid = await this.resolveCaseUuid(ctx.tenant_uuid, payload.patient_case_uuid);
 			const row = await this.payments.createPayment({
 				...payload,
+				// See uuid comment in syncPatient — same reason: keep the local
+				// Dexie row and the server row on a single primary key.
+				uuid: entry.client_uuid,
 				patient_case_uuid,
 				tenant_uuid: ctx.tenant_uuid,
 				created_by: ctx.acting_user_name,

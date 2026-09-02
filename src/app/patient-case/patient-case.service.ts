@@ -107,6 +107,10 @@ export class PatientCaseService {
 		created_by: string;
 		// Offline sync provenance — set only when the row originated on a
 		// station in offline mode and is being replayed by /offline/sync.
+		// When `uuid` is passed (offline replay), the row is inserted with
+		// that PK so the client's local cache and the server row share an
+		// identity. Online creates omit it and let the DB default fire.
+		uuid?: string;
 		client_uuid?: string | null;
 		created_offline_at?: string | Date | null;
 	}): Promise<PatientCase> {
@@ -130,6 +134,10 @@ export class PatientCaseService {
 			const case_number = `${case_type}-${String(next).padStart(6, '0')}`;
 
 			const inserted = (await PatientCase.query(trx).insertAndFetch({
+				// Spread first so downstream keys still win — but explicitly
+				// omit `uuid` from the object when not provided so Objection
+				// doesn't send a NULL and clobber the DB default.
+				...(data.uuid ? { uuid: data.uuid } : {}),
 				tenant_uuid: data.tenant_uuid,
 				patient_uuid: data.patient_uuid,
 				case_number,

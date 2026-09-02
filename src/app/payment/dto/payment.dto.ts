@@ -176,6 +176,12 @@ export class CreatePaymentDTO {
 
 	// Offline-sync provenance. Not exposed to the online cashier UI — populated
 	// only by the /offline/sync dispatcher when replaying an outbox entry.
+	@ApiProperty({ required: false, description: 'Offline sync only — use client_uuid as the row PK.' })
+	@IsOptional()
+	@IsString()
+	@MaxLength(64)
+	uuid?: string;
+
 	@ApiProperty({ required: false, description: 'Offline sync only.' })
 	@IsOptional()
 	@IsString()

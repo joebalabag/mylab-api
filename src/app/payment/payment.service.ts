@@ -353,6 +353,10 @@ export class PaymentService {
 			const payment_number = await this.nextPaymentNumber(trx, data.tenant_uuid);
 
 			const payment = (await Payment.query(trx).insertAndFetch({
+				// Offline sync dispatcher passes the client_uuid as the intended
+				// row PK; omit when absent so the DB default (uuid_generate_v4)
+				// fires for online creates.
+				...((data as any).uuid ? { uuid: (data as any).uuid } : {}),
 				tenant_uuid: data.tenant_uuid,
 				patient_case_uuid: data.patient_case_uuid,
 				patient_uuid: kase.patient_uuid,
