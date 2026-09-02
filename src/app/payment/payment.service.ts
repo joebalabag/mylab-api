@@ -377,6 +377,8 @@ export class PaymentService {
 				notes: data.notes ?? null,
 				status: 'completed',
 				created_by: data.created_by,
+				client_uuid: (data as any).client_uuid ?? null,
+				created_offline_at: (data as any).created_offline_at ?? null,
 			} as any)) as unknown as Payment;
 
 			// Insert payment_items with per-line snapshots and mark the source

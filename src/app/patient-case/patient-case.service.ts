@@ -105,6 +105,10 @@ export class PatientCaseService {
 		referring_physician?: string | null;
 		notes?: string | null;
 		created_by: string;
+		// Offline sync provenance — set only when the row originated on a
+		// station in offline mode and is being replayed by /offline/sync.
+		client_uuid?: string | null;
+		created_offline_at?: string | Date | null;
 	}): Promise<PatientCase> {
 		const case_type: CaseType = (data.case_type as CaseType) || 'OPD';
 		const knex = PatientCase.knex();
@@ -138,6 +142,8 @@ export class PatientCaseService {
 				notes: data.notes ?? null,
 				status: 'open',
 				created_by: data.created_by,
+				client_uuid: data.client_uuid ?? null,
+				created_offline_at: (data.created_offline_at as any) ?? null,
 			} as any)) as unknown as PatientCase;
 			return inserted;
 		});

@@ -33,6 +33,7 @@ import { AiExtractionModule } from './app/ai-extraction/ai-extraction.module';
 import { AnalyticsModule } from './app/analytics/analytics.module';
 import { ReportsModule } from './app/reports/reports.module';
 import { SetupReadinessModule } from './app/setup-readiness/setup-readiness.module';
+import { OfflineSyncModule } from './app/offline-sync/offline-sync.module';
 
 @Module({
 	imports: [
@@ -75,6 +76,7 @@ import { SetupReadinessModule } from './app/setup-readiness/setup-readiness.modu
 		AnalyticsModule,
 		ReportsModule,
 		SetupReadinessModule,
+		OfflineSyncModule,
 	],
 	providers: [
 		{

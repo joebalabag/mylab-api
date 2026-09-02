@@ -173,6 +173,19 @@ export class CreatePaymentDTO {
 	@IsString()
 	@MaxLength(2000)
 	notes?: string;
+
+	// Offline-sync provenance. Not exposed to the online cashier UI — populated
+	// only by the /offline/sync dispatcher when replaying an outbox entry.
+	@ApiProperty({ required: false, description: 'Offline sync only.' })
+	@IsOptional()
+	@IsString()
+	@MaxLength(64)
+	client_uuid?: string;
+
+	@ApiProperty({ required: false, description: 'Offline sync only — device wall-clock.' })
+	@IsOptional()
+	@IsString()
+	created_offline_at?: string;
 }
 
 /**
