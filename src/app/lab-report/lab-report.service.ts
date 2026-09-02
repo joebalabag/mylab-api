@@ -512,6 +512,10 @@ export class LabReportService {
 		payload: CreateLabReportBatchDTO,
 		tenant_uuid: string,
 		acting_user: { uuid?: string; name: string; lab_display_name?: string | null; license_number?: string | null },
+		// Offline-sync provenance. When provided, stamps every generated
+		// lab_report with the device wall-clock so audits can bucket rows
+		// captured offline vs. online.
+		offlineMeta?: { created_offline_at?: string | Date | null },
 	): Promise<LabReport[]> {
 		const knex = LabReport.knex();
 		return objectionTransaction(knex, async (trx) => {
@@ -637,6 +641,9 @@ export class LabReportService {
 				});
 
 				const report = (await LabReport.query(trx).insertAndFetch({
+					// Offline sync dispatcher pre-generates the uuid client-side so
+					// the local Dexie row and the server row share an identity.
+					...(group.client_uuid ? { uuid: group.client_uuid } : {}),
 					tenant_uuid,
 					patient_requisition_uuid: requisition.uuid,
 					patient_uuid: requisition.patient_uuid,
@@ -646,6 +653,8 @@ export class LabReportService {
 					item_category_name: cat?.name ?? null,
 					lab_number,
 					status: 'draft',
+					client_uuid: group.client_uuid ?? null,
+					created_offline_at: (offlineMeta?.created_offline_at as any) ?? null,
 					// count=2 stamps the creator into slot 1 up front so the
 					// finalize step captures the second signer. count=1 leaves
 					// slot 1 null; setFinal fills it with whoever tags final.

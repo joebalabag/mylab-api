@@ -31,6 +31,10 @@ export class PatientRequisition extends Model {
 
 	status!: RequisitionStatus;
 
+	// Offline-sync fields. See migration 20260902000500.
+	client_uuid?: string | null;
+	created_offline_at?: Date | null;
+
 	created_by?: string;
 	updated_by?: string;
 	created_at?: Date;

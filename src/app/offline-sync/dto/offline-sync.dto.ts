@@ -14,7 +14,14 @@ import {
 	ValidateNested,
 } from 'class-validator';
 
-export const OFFLINE_ENTITY_TYPES = ['patient', 'patient_case', 'payment', 'lab_report_results'] as const;
+export const OFFLINE_ENTITY_TYPES = [
+	'patient',
+	'patient_case',
+	'patient_requisition',   // composite: create + items + finalize
+	'payment',
+	'lab_report_batch',      // composite: createBatch (one or more reports for a paid requisition)
+	'lab_report_results',    // update: enter typed values into a draft report
+] as const;
 export type OfflineEntityType = (typeof OFFLINE_ENTITY_TYPES)[number];
 
 export class EnableDeviceDTO {

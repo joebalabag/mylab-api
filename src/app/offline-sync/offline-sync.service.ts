@@ -7,6 +7,8 @@ import { Patient } from '../patient/patient.model';
 import { PatientCase } from '../patient-case/patient-case.model';
 import { Payment } from '../payment/payment.model';
 import { LabReport } from '../lab-report/lab-report.model';
+import { PatientRequisition } from '../patient-requisition/patient-requisition.model';
+import { PatientRequisitionItem } from '../patient-requisition/patient-requisition-item.model';
 import { TestItem } from '../test-item/test-item.model';
 import { ItemGroup } from '../item-group/item-group.model';
 import { ItemCategory } from '../item-category/item-category.model';
@@ -162,12 +164,21 @@ export class OfflineSyncService {
 		const cutoff = this.rollingCutoff();
 
 		const [
-			tenant, reference, patients, cases, payments, labReports,
+			tenant, reference, patients, cases, requisitions, requisitionItems, payments, labReports,
 		] = await Promise.all([
 			Tenant.query().findById(tenant_uuid),
 			this.loadReferenceData(tenant_uuid),
 			Patient.query().where({ tenant_uuid }).where('created_at', '>=', cutoff),
 			PatientCase.query().where({ tenant_uuid }).where('created_at', '>=', cutoff),
+			PatientRequisition.query().where({ tenant_uuid }).where('created_at', '>=', cutoff),
+			// Items load off the requisitions they belong to — same rolling
+			// window as the parent set.
+			PatientRequisitionItem.query()
+				.alias('pri')
+				.innerJoin('patient_requisitions as pr', 'pr.uuid', 'pri.patient_requisition_uuid')
+				.where('pri.tenant_uuid', tenant_uuid)
+				.where('pr.created_at', '>=', cutoff)
+				.select('pri.*'),
 			Payment.query().where({ tenant_uuid }).where('created_at', '>=', cutoff),
 			LabReport.query().where({ tenant_uuid }).where('created_at', '>=', cutoff),
 		]);
@@ -177,6 +188,8 @@ export class OfflineSyncService {
 			reference,
 			patients,
 			patient_cases: cases,
+			patient_requisitions: requisitions,
+			patient_requisition_items: requisitionItems,
 			payments,
 			lab_reports: labReports,
 			server_time: new Date().toISOString(),
@@ -191,11 +204,13 @@ export class OfflineSyncService {
 		if (Number.isNaN(sinceDate.getTime())) throw new BadRequestException('`since` must be a valid ISO timestamp.');
 
 		const [
-			reference, patients, cases, payments, labReports,
+			reference, patients, cases, requisitions, requisitionItems, payments, labReports,
 		] = await Promise.all([
 			this.loadReferenceData(tenant_uuid),
 			Patient.query().where({ tenant_uuid }).where('updated_at', '>', sinceDate),
 			PatientCase.query().where({ tenant_uuid }).where('updated_at', '>', sinceDate),
+			PatientRequisition.query().where({ tenant_uuid }).where('updated_at', '>', sinceDate),
+			PatientRequisitionItem.query().where({ tenant_uuid }).where('updated_at', '>', sinceDate),
 			Payment.query().where({ tenant_uuid }).where('updated_at', '>', sinceDate),
 			LabReport.query().where({ tenant_uuid }).where('updated_at', '>', sinceDate),
 		]);
@@ -204,6 +219,8 @@ export class OfflineSyncService {
 			reference,
 			patients,
 			patient_cases: cases,
+			patient_requisitions: requisitions,
+			patient_requisition_items: requisitionItems,
 			payments,
 			lab_reports: labReports,
 			server_time: new Date().toISOString(),
@@ -236,7 +253,7 @@ export class OfflineSyncService {
 
 			const dispatched = await this.dispatcher.dispatch(entry, {
 				tenant_uuid,
-				acting_user_name: actor.name,
+				acting_user: { uuid: actor.uuid, name: actor.name },
 			});
 
 			const result: SyncEntryResult = {

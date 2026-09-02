@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { PatientModule } from '../patient/patient.module';
 import { PatientCaseModule } from '../patient-case/patient-case.module';
+import { PatientRequisitionModule } from '../patient-requisition/patient-requisition.module';
 import { PaymentModule } from '../payment/payment.module';
 import { LabReportModule } from '../lab-report/lab-report.module';
 
@@ -15,7 +16,7 @@ import { IdempotencyService } from './idempotency.service';
 	// AuthModule re-exports JwtModule — that's how OfflineSyncService gets a
 	// JwtService without configuring a separate one (would risk drifting from
 	// the app-wide secret / expiry defaults).
-	imports: [AuthModule, PatientModule, PatientCaseModule, PaymentModule, LabReportModule],
+	imports: [AuthModule, PatientModule, PatientCaseModule, PatientRequisitionModule, PaymentModule, LabReportModule],
 	controllers: [OfflineSyncController],
 	providers: [OfflineSyncService, SyncDispatcherService, IdempotencyService],
 	exports: [OfflineSyncService],

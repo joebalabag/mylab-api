@@ -79,6 +79,15 @@ export class LabReportCreateGroupDTO {
 	@IsString()
 	@MaxLength(2000)
 	remarks?: string;
+
+	@ApiProperty({
+		required: false,
+		format: 'uuid',
+		description: 'Offline sync only — when set, the created lab_report is inserted with this uuid so the client\'s Dexie cache and the server row share an identity.',
+	})
+	@IsOptional()
+	@IsUUID()
+	client_uuid?: string;
 }
 
 /**
