@@ -1,7 +1,21 @@
 import { Logger } from '@nestjs/common';
-import puppeteer from 'puppeteer';
+import type { Browser, LaunchOptions } from 'puppeteer';
 
 const logger = new Logger('HtmlPdf');
+
+// Puppeteer went ESM-only in v23, so a plain `import puppeteer from 'puppeteer'`
+// gets transpiled to `require('puppeteer')` under our CJS tsconfig and blows
+// up at runtime with ERR_REQUIRE_ESM. Route the import through Function() so
+// TypeScript can't rewrite it back into a require — this stays a true dynamic
+// ES import in the compiled JS.
+let puppeteerPromise: Promise<{ launch: (opts?: LaunchOptions) => Promise<Browser> }> | undefined;
+function loadPuppeteer() {
+	if (!puppeteerPromise) {
+		puppeteerPromise = (Function('return import("puppeteer")') as () => Promise<any>)()
+			.then((mod) => mod.default ?? mod);
+	}
+	return puppeteerPromise;
+}
 
 export interface RenderHtmlToPdfOptions {
 	/**
@@ -36,6 +50,7 @@ export async function renderHtmlToPdf(html: string, opts: RenderHtmlToPdfOptions
 	// containers where the user-namespace sandbox isn't set up. It's a common
 	// requirement for CI and PaaS hosts and doesn't materially reduce safety
 	// since we're only rendering our own HTML on the same host.
+	const puppeteer = await loadPuppeteer();
 	const browser = await puppeteer.launch({
 		headless: true,
 		args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
