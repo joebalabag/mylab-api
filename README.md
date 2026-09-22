@@ -335,3 +335,59 @@ workspace path `/var/lib/jenkins/workspace/mylab-api`, deployed origin
 setup, `.env.production` values, `ecosystem.config.js`, nginx reverse
 proxy, Let's Encrypt HTTPS, firewall, `trust proxy` inside Nest, and
 future-update checklist.
+
+
+## Description
+
+  One-liner (tagline)
+
+  MyLab — a browser-based laboratory management system for Philippine clinical labs.
+
+  ---
+  Short description (~60 words)
+
+  MyLab is a multi-tenant, PWA-ready laboratory information system for clinical labs. It handles patients, cases, requisitions,
+  cashiering with 8 payment methods, and full result encoding (single, panel, narrative, culture, matrix) with medtech + pathologist
+  e-signatures. Finalized reports are printable and shareable via a QR-linked, HMAC-verified public view — no login required.
+
+  ---
+  Full listing description (~300 words)
+
+  MyLab is an end-to-end laboratory management system built for Philippine clinical laboratories. Delivered as a fast Vue 3 progressive
+   web app backed by a NestJS + PostgreSQL API, it runs on any modern browser and installs to desktop or mobile like a native app.
+
+  What it does
+
+  MyLab — a browser-based laboratory management system for Philippine clinical labs.
+
+  ---
+  Short description (~60 words)
+
+  MyLab is a multi-tenant, PWA-ready laboratory information system for clinical labs. It handles patients, cases, requisitions,
+  cashiering with 8 payment methods, and full result encoding (single, panel, narrative, culture, matrix) with medtech + pathologist
+  e-signatures. Finalized reports are printable and shareable via a QR-linked, HMAC-verified public view — no login required.
+
+  ---
+  Full listing description (~300 words)
+
+  MyLab is an end-to-end laboratory management system built for Philippine clinical laboratories. Delivered as a fast Vue 3 progressive
+   web app backed by a NestJS + PostgreSQL API, it runs on any modern browser and installs to desktop or mobile like a native app.
+
+  What it does
+
+  - Patient & case management — Patient master with duplicate-check search-first UX, auto-generated MRNs, and a case grouping model
+  that ties every visit's requisitions, payments, and lab reports together.
+  - Test catalog — Hierarchical item groups, categories, individual test items, and bundled packages. Ships with a pre-loaded
+  Philippine lab catalog (5 groups, 20+ categories, hundreds of tests) importable in one click.
+  - Cashier — Finalize requisitions and collect payment through 8 methods: cash, e-wallet (GCash / Maya / GrabPay), bank transfer, A/R,
+   insurance, paid outside, charity/waived, and other. Manager-password void controls included.
+  - Laboratory — Result encoding with 5 result types (single value, panel, narrative, culture & sensitivity, matrix), automatic
+  reference-range validation, and a two-stage medtech → pathologist e-signing workflow.
+  - QR-verified reports — Every finalized report prints with a QR code linking to a signed, read-only public view — patients and
+  doctors can verify authenticity without an account.
+  - Reports & dashboard — 12 built-in reports plus a live KPI dashboard covering revenue, receivables, and test throughput.
+  - Self-service onboarding — Tenants sign up, verify email, pick a plan, and pay via GCash, bank transfer, or PayPal. Uploaded
+  receipts are auto-read by on-device OCR to prefill the payment form.
+  - Granular access control — Per-user access templates so each staff role only sees what they should.
+
+  Tech: Vue 3 · Pinia · Tailwind · NestJS 11 · PostgreSQL · JWT · PWA · PayPal · Tesseract OCR.

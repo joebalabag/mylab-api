@@ -121,6 +121,11 @@ export class PatientRequisitionService {
 		notes?: string | null;
 		physician?: string | null;
 		created_by: string;
+		// Offline sync provenance — set only when the row originated on a
+		// station in offline mode and is being replayed by /offline/sync.
+		uuid?: string;
+		client_uuid?: string | null;
+		created_offline_at?: string | Date | null;
 	}): Promise<PatientRequisition> {
 		const knex = PatientRequisition.knex();
 		return objectionTransaction(knex, async (trx) => {
@@ -141,6 +146,10 @@ export class PatientRequisitionService {
 			const requisition_number = `R-${String(next).padStart(6, '0')}`;
 
 			const inserted = (await PatientRequisition.query(trx).insertAndFetch({
+				// Offline sync dispatcher passes uuid = client_uuid so the local
+				// Dexie row and the server row share an identity. Online creates
+				// omit this and let the DB default (uuid_generate_v4) fire.
+				...(data.uuid ? { uuid: data.uuid } : {}),
 				tenant_uuid: data.tenant_uuid,
 				patient_case_uuid: data.patient_case_uuid,
 				patient_uuid: data.patient_uuid,
@@ -152,6 +161,8 @@ export class PatientRequisitionService {
 				total: 0,
 				status: 'draft',
 				created_by: data.created_by,
+				client_uuid: data.client_uuid ?? null,
+				created_offline_at: (data.created_offline_at as any) ?? null,
 			} as any)) as unknown as PatientRequisition;
 			return inserted;
 		});
