@@ -8,9 +8,12 @@ import { TenantSubscriptionHistory } from '../tenant-subscription-payment/tenant
 import { applyPagination, PagedResult } from '@/common/helpers/pagination.helper';
 import { DashboardQueryDTO } from '@/common/dto/dashboard-query.dto';
 import { normalizeTimezone } from '@/common/helpers/timezone.helper';
+import { MailerService } from '@/common/mailer/mailer.service';
+import { decryptSecret } from '@/common/crypto/aes.util';
 
 @Injectable()
 export class TenantService {
+	constructor(private readonly mailer: MailerService) {}
 	async listDashboard(filters: DashboardQueryDTO): Promise<PagedResult<Tenant>> {
 		const query = Tenant.query().orderBy('created_at', 'desc');
 
@@ -272,5 +275,61 @@ export class TenantService {
 	// separate method so callers stay readable at the call site.
 	removeLabHeaderFile(publicPathOrUrl: string): void {
 		this.removeLogoFile(publicPathOrUrl);
+	}
+
+	/**
+	 * Fire a single test email against the supplied SMTP config. When
+	 * `password` is empty the stored encrypted password on the tenant row
+	 * is used — lets the operator retest existing settings without
+	 * re-typing. Errors are converted to the SMTP driver's message so the
+	 * UI can surface it (invalid credentials, connection refused, etc.).
+	 */
+	async testSmtp(input: {
+		tenant_uuid: string;
+		host: string;
+		port: number;
+		secure?: boolean;
+		user: string;
+		password?: string;
+		to: string;
+	}): Promise<{ sent: boolean }> {
+		let password = (input.password || '').trim();
+		let tenantName = '';
+		{
+			const row = await Tenant.query()
+				.findById(input.tenant_uuid)
+				.select('smtp_password_enc', 'display_name', 'legal_name');
+			if (!password) {
+				password = decryptSecret((row as any)?.smtp_password_enc);
+				if (!password) throw new BadRequestException('SMTP password is required (no stored password to reuse).');
+			}
+			tenantName = (row as any)?.display_name || (row as any)?.legal_name || '';
+		}
+		try {
+			await this.mailer.send(
+				input.to,
+				'MyLab · SMTP test email',
+				`<p>Hi,</p>
+<p>This is a test email from your MyLab tenant's Company Settings → Emailing Results panel. If you're reading this, your SMTP credentials are working.</p>
+<p style="font-size:12px;color:#64748b">Sent via ${input.host}:${input.port} as ${input.user}.</p>`,
+				undefined,
+				{
+					smtp: {
+						host: input.host,
+						port: Number(input.port),
+						secure: !!input.secure,
+						user: input.user,
+						password,
+					},
+					// So the operator's own inbox shows the sender as
+					// "Clinic Name <lab@clinic.com>" during the test —
+					// same alias production lab-result emails will use.
+					fromName: tenantName || undefined,
+				},
+			);
+			return { sent: true };
+		} catch (err: any) {
+			throw new BadRequestException(err?.message || 'SMTP send failed.');
+		}
 	}
 }

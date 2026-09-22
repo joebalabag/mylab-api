@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Lab Report <%= report.lab_number || '' %></title>
+<style>
+	:root { color-scheme: light; }
+	* { box-sizing: border-box; }
+	html, body { margin: 0; padding: 0; background: #f1f5f9; color: #0f172a; font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+	.page { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
+	.card { background: #ffffff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04); padding: 28px; position: relative; }
+	.toolbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #ffffff; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); margin-bottom: 12px; font-size: 12px; color: #475569; }
+	.toolbar .lab-num { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 600; color: #0f172a; }
+	.toolbar button { background: #0f172a; color: #ffffff; border: 0; border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
+	.toolbar button:hover { background: #1e293b; }
+
+	.header { display: flex; align-items: flex-start; gap: 16px; border-bottom: 1px solid #cbd5e1; padding-bottom: 12px; margin-bottom: 16px; }
+	.header .brand { flex: 1; min-width: 0; }
+	.header .brand.image img { max-height: 128px; width: 100%; object-fit: contain; }
+	.header .brand.logo-text { display: flex; align-items: flex-start; gap: 12px; }
+	.header .brand.logo-text img { height: 96px; width: 96px; object-fit: contain; flex-shrink: 0; }
+	.header .brand .company { font-size: 22px; font-weight: 700; line-height: 1.15; color: #0f172a; }
+	.header .brand .rest { white-space: pre-line; font-size: 12px; color: #475569; margin-top: 2px; }
+	.header .qr { flex-shrink: 0; text-align: center; }
+	.header .qr img { height: 96px; width: 96px; display: block; }
+	.header .qr .caption { margin-top: 2px; font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; }
+
+	.info { font-size: 12px; margin-bottom: 12px; }
+	.info .row { display: flex; align-items: baseline; gap: 16px; padding: 1px 0; }
+	.info .left { flex: 1; min-width: 0; }
+	.info .right { width: 260px; flex-shrink: 0; white-space: nowrap; }
+	.muted { color: #64748b; }
+	.mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 600; }
+	.pill-status { font-weight: 600; }
+	.pill-status.finalized { color: #047857; }
+	.pill-status.draft, .pill-status.voided { color: #b45309; }
+
+	.category-band { border-left: 4px solid #64748b; padding: 4px 12px; margin: 10px 0 6px; font-weight: 700; letter-spacing: 0.02em; color: #1e293b; }
+
+	.item { margin-bottom: 12px; }
+	.item .name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 2px; margin-bottom: 4px; }
+	.item .name .test { font-size: 13px; font-weight: 600; color: #1e293b; }
+	.item .name .code { font-size: 10px; font-family: ui-monospace, Menlo, Consolas, monospace; color: #64748b; }
+	.item .name .specimen { font-size: 10px; color: #64748b; }
+	.item .method { font-size: 10px; font-style: italic; color: #475569; }
+
+	table { width: 100%; border-collapse: collapse; font-size: 12px; }
+	thead th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; font-weight: 600; padding: 2px 0; }
+	tbody td { padding: 2px 0; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+	tbody tr.section-head td { padding-top: 3px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #334155; border-bottom: none; }
+	td.unit, td.ref, th.unit, th.ref { color: #64748b; white-space: nowrap; }
+	td.pl-6 { padding-left: 24px; }
+
+	.matrix td, .matrix th { padding: 2px 8px; }
+	.matrix th.corner { border-bottom: 1px solid #e2e8f0; }
+
+	.narrative { white-space: pre-wrap; font-size: 12px; line-height: 1.4; }
+
+	.remarks { margin-top: 8px; padding-top: 4px; border-top: 1px solid #e2e8f0; font-size: 12px; }
+	.remarks .lbl { font-weight: 700; }
+
+	.signatures { margin-top: 56px; padding-top: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+	.signatures .cell { text-align: center; font-size: 12px; }
+	.signatures .cell .line { border-bottom: 1px solid #64748b; height: 44px; }
+	.signatures .cell .name { font-weight: 600; margin-top: 4px; min-height: 1em; }
+	.signatures .cell .lic { font-size: 10px; color: #64748b; min-height: 1em; }
+	.signatures .cell .role { font-size: 12px; color: #64748b; }
+	.signatures .two-testers { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+	.footer-note { margin-top: 12px; border-top: 1px solid #e2e8f0; padding-top: 6px; font-size: 10px; color: #64748b; line-height: 1.35; }
+	.footer-note .disclaimer { font-style: italic; margin-top: 2px; }
+
+	.watermark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; overflow: hidden; }
+	.watermark span { transform: rotate(-30deg); font-size: 128px; font-weight: 900; letter-spacing: 0.15em; color: rgba(148, 163, 184, 0.35); user-select: none; }
+
+	@media print {
+		body { background: #ffffff; }
+		.page { padding: 0; max-width: none; }
+		.card { box-shadow: none; border-radius: 0; padding: 12mm; }
+		.toolbar { display: none; }
+	}
+</style>
+</head>
+<body>
+<div class="page">
+	<div class="toolbar">
+		<div>Secure view · Laboratory <span class="lab-num"><%= report.lab_number || '' %></span></div>
+		<button type="button" onclick="window.print()">Print / Save PDF</button>
+	</div>
+
+	<div class="card">
+		<% if (report.status === 'draft') { %>
+			<div class="watermark"><span>DRAFT</span></div>
+		<% } else if (report.status === 'voided') { %>
+			<div class="watermark"><span>VOIDED</span></div>
+		<% } %>
+
+		<!-- ── Header ────────────────────────────────────────────── -->
+		<div class="header">
+			<div class="brand <%= (tenant.labHeaderMode === 'image' && tenant.labHeaderImage) ? 'image' : 'logo-text' %>">
+				<% if (tenant.labHeaderMode === 'image' && tenant.labHeaderImage) { %>
+					<img src="<%= tenant.labHeaderImage %>" alt="<%= tenant.name %>" />
+				<% } else { %>
+					<% if (tenant.logo) { %><img src="<%= tenant.logo %>" alt="<%= tenant.name %>" /><% } %>
+					<div style="min-width:0; flex:1; line-height:1.15;">
+						<% if (headerCompanyName) { %><div class="company"><%= headerCompanyName %></div><% } %>
+						<% if (headerRestLines) { %><div class="rest"><%= headerRestLines %></div><% } %>
+					</div>
+				<% } %>
+			</div>
+			<% if (qrDataUrl) { %>
+				<div class="qr">
+					<img src="<%= qrDataUrl %>" alt="Scan to view online" />
+					<div class="caption">Scan to view</div>
+				</div>
+			<% } %>
+		</div>
+
+		<!-- ── Patient / report info ─────────────────────────────── -->
+		<div class="info">
+			<div class="row">
+				<div class="left">
+					<span class="muted">Patient:</span>
+					<span style="font-weight:500;"><%= patientName || '—' %></span>
+					<span style="margin-left:8px; color:#334155;">
+						<%= ageStr || '—' %><% if (sexStr) { %> | <%= sexStr %><% } %>
+					</span>
+				</div>
+				<div class="right">
+					<span class="muted">Laboratory #:</span>
+					<span class="mono" style="margin-left:4px;"><%= report.lab_number || '—' %></span>
+				</div>
+			</div>
+			<div class="row">
+				<div class="left">
+					<span class="muted">Address:</span>
+					<span style="margin-left:4px;"><%= report.patient_address || '—' %></span>
+				</div>
+				<div class="right">
+					<span class="muted">Time Taken:</span>
+					<span style="margin-left:4px;"><%= specimenCollectedAtFmt || '—' %></span>
+				</div>
+			</div>
+			<div class="row">
+				<div class="left">
+					<span class="muted">Physician:</span>
+					<span style="margin-left:4px;"><%= report.physician || '—' %></span>
+				</div>
+				<div class="right">
+					<span class="muted">Status:</span>
+					<span class="pill-status <%= (report.status || '') %>" style="margin-left:4px;">
+						<%= (report.status || '').toUpperCase() || '—' %>
+					</span>
+					<% if (report.finalized_at) { %>
+						<span class="muted" style="margin-left:4px;">| <%= finalizedAtFmt %></span>
+					<% } %>
+				</div>
+			</div>
+		</div>
+
+		<!-- ── Category header ───────────────────────────────────── -->
+		<% if (report.item_category_print_title || report.item_category_name) { %>
+			<div class="category-band" style="border-left-color: <%= categoryColor %>; background: <%= categoryFill %>;">
+				<%= report.item_category_print_title || report.item_category_name %>
+			</div>
+		<% } %>
+
+		<!-- ── Results ───────────────────────────────────────────── -->
+		<% if (isChemistryFlat) { %>
+			<table>
+				<thead>
+					<tr>
+						<th style="width:33%;">Analyte</th>
+						<th>Result</th>
+						<% if (anyUnitAcross) { %><th class="unit" style="width:64px;">Unit</th><% } %>
+						<% if (anyReferenceAcross) { %><th class="ref" style="width:220px;">Reference</th><% } %>
+					</tr>
+				</thead>
+				<tbody>
+					<% (report.items || []).forEach(function(it) { %>
+						<% if (it.result_type === 'single') { %>
+							<% (it.values || []).forEach(function(v) { %>
+								<tr>
+									<td><%= it.test_name %></td>
+									<td><%= v.value_text || '' %></td>
+									<% if (anyUnitAcross) { %><td class="unit"><%= v.unit_of_measure || '' %></td><% } %>
+									<% if (anyReferenceAcross) { %><td class="ref"><%= v.reference_range || '' %></td><% } %>
+								</tr>
+							<% }); %>
+						<% } else if (it.result_type === 'panel') { %>
+							<tr class="section-head">
+								<td colspan="<%= 2 + (anyUnitAcross ? 1 : 0) + (anyReferenceAcross ? 1 : 0) %>">
+									<%= it.test_name %>
+								</td>
+							</tr>
+							<% (it.values || []).forEach(function(v) { %>
+								<tr>
+									<td class="pl-6"><%= v.component_name %></td>
+									<td><%= v.value_text || '' %></td>
+									<% if (anyUnitAcross) { %><td class="unit"><%= v.unit_of_measure || '' %></td><% } %>
+									<% if (anyReferenceAcross) { %><td class="ref"><%= v.reference_range || '' %></td><% } %>
+								</tr>
+							<% }); %>
+						<% } else { %>
+							<tr>
+								<td colspan="<%= 2 + (anyUnitAcross ? 1 : 0) + (anyReferenceAcross ? 1 : 0) %>">
+									<div style="font-weight:600; color:#1e293b;"><%= it.test_name %></div>
+									<div class="narrative"><%= it.narrative_text || '—' %></div>
+								</td>
+							</tr>
+						<% } %>
+					<% }); %>
+				</tbody>
+			</table>
+		<% } else { %>
+			<% (report.items || []).forEach(function(it) { %>
+				<div class="item">
+					<div class="name">
+						<span class="test"><%= it.test_name %></span>
+						<span class="code"><%= it.test_code %></span>
+						<% if (it.specimen) { %><span class="specimen">· specimen: <%= it.specimen %></span><% } %>
+					</div>
+					<% if (it.method) { %><div class="method">Method: <%= it.method %></div><% } %>
+
+					<% if (it.result_type === 'single' || it.result_type === 'panel') { %>
+						<% var itemAnyUnit = (it.values || []).some(function(v){ return !!(v.unit_of_measure && String(v.unit_of_measure).trim()); }); %>
+						<% var itemAnyRef  = (it.values || []).some(function(v){ return !!(v.reference_range && String(v.reference_range).trim()); }); %>
+						<table>
+							<thead>
+								<tr>
+									<th style="width:33%;">Analyte</th>
+									<th>Result</th>
+									<% if (itemAnyUnit) { %><th class="unit" style="width:64px;">Unit</th><% } %>
+									<% if (itemAnyRef)  { %><th class="ref" style="width:220px;">Reference</th><% } %>
+								</tr>
+							</thead>
+							<tbody>
+								<% groupValuesBySection(it.values).forEach(function(grp) { %>
+									<% if (grp.section) { %>
+										<tr class="section-head">
+											<td colspan="<%= 2 + (itemAnyUnit ? 1 : 0) + (itemAnyRef ? 1 : 0) %>">
+												<%= grp.section %>
+											</td>
+										</tr>
+									<% } %>
+									<% grp.values.forEach(function(v) { %>
+										<tr>
+											<td><%= v.component_name %></td>
+											<td><%= v.value_text || '' %></td>
+											<% if (itemAnyUnit) { %><td class="unit"><%= v.unit_of_measure || '' %></td><% } %>
+											<% if (itemAnyRef)  { %><td class="ref"><%= v.reference_range || '' %></td><% } %>
+										</tr>
+									<% }); %>
+								<% }); %>
+							</tbody>
+						</table>
+					<% } else if (it.result_type === 'matrix') { %>
+						<% var grid = buildMatrixGrid(it); %>
+						<table class="matrix">
+							<thead>
+								<tr>
+									<th class="corner"></th>
+									<% grid.cols.forEach(function(c) { %><th style="border-bottom:1px solid #e2e8f0;"><%= c %></th><% }); %>
+								</tr>
+							</thead>
+							<tbody>
+								<% grid.rows.forEach(function(r) { %>
+									<tr>
+										<td style="font-weight:500; color:#334155;"><%= r %></td>
+										<% grid.cols.forEach(function(c) { %>
+											<% var cell = grid.cells[r + '|' + c] || {}; %>
+											<td><%= cell.value_text || '' %></td>
+										<% }); %>
+									</tr>
+								<% }); %>
+							</tbody>
+						</table>
+					<% } else { %>
+						<div class="narrative"><%= it.narrative_text || '—' %></div>
+					<% } %>
+				</div>
+			<% }); %>
+		<% } %>
+
+		<% if (report.remarks) { %>
+			<div class="remarks"><span class="lbl">Remarks:</span> <%= report.remarks %></div>
+		<% } %>
+
+		<!-- ── Signature block (no e-signature image on the public copy) ── -->
+		<div class="signatures">
+			<% if (report.medtech2_name) { %>
+				<div class="two-testers">
+					<div class="cell">
+						<div class="line"></div>
+						<div class="name"><%= report.status === 'finalized' ? (report.medtech_name || '') : '' %></div>
+						<div class="lic"><% if (report.status === 'finalized' && report.medtech_license) { %>Lic. No. <%= report.medtech_license %><% } else { %>&nbsp;<% } %></div>
+						<div class="role"><%= report.item_group_tester_role || 'Medical Technologist' %></div>
+					</div>
+					<div class="cell">
+						<div class="line"></div>
+						<div class="name"><%= report.status === 'finalized' ? (report.medtech2_name || '') : '' %></div>
+						<div class="lic"><% if (report.status === 'finalized' && report.medtech2_license) { %>Lic. No. <%= report.medtech2_license %><% } else { %>&nbsp;<% } %></div>
+						<div class="role"><%= report.item_group_tester_role || 'Medical Technologist' %></div>
+					</div>
+				</div>
+			<% } else { %>
+				<div class="cell">
+					<div class="line"></div>
+					<div class="name"><%= report.status === 'finalized' ? (report.medtech_name || '') : '' %></div>
+					<div class="lic"><% if (report.status === 'finalized' && report.medtech_license) { %>Lic. No. <%= report.medtech_license %><% } else { %>&nbsp;<% } %></div>
+					<div class="role"><%= report.item_group_tester_role || 'Medical Technologist' %></div>
+				</div>
+			<% } %>
+			<div class="cell">
+				<div class="line"></div>
+				<div class="name"><%= report.status === 'finalized' ? (report.pathologist_name || '') : '' %></div>
+				<div class="lic"><% if (report.status === 'finalized' && report.pathologist_license) { %>Lic. No. <%= report.pathologist_license %><% } else { %>&nbsp;<% } %></div>
+				<div class="role">Pathologist</div>
+			</div>
+		</div>
+
+		<div class="footer-note">
+			<div>Printed: <%= printedAtFmt %></div>
+			<div class="disclaimer">This is a computer-generated report and does not require a signature.</div>
+		</div>
+	</div>
+</div>
+</body>
+</html>

@@ -259,6 +259,22 @@ export class CreateTenantDTO {
 	@IsOptional()
 	@IsIn([1, 2])
 	tester_signatory_count?: number;
+
+	@ApiProperty({
+		required: false,
+		type: 'boolean',
+		default: true,
+		description:
+			'When true, Tag as Final auto-emails the finalized PDF to the patient (skipped when patient has no email). When false, the send is manual only (Resend button in Print Preview).',
+	})
+	// Must use the shared `toBool` helper: the app-wide ValidationPipe runs
+	// with `enableImplicitConversion: true`, which coerces "0" → true (any
+	// non-empty string is truthy) BEFORE a plain @Transform runs. `toBool`
+	// grabs the raw value off `obj[key]` to sidestep that.
+	@Transform(toBool)
+	@IsOptional()
+	@IsBoolean()
+	auto_email_result_on_finalize?: boolean;
 }
 
 export class UpdateTenantDTO {
@@ -473,6 +489,106 @@ export class UpdateTenantDTO {
 	@IsOptional()
 	@IsIn([1, 2])
 	tester_signatory_count?: number;
+
+	@ApiProperty({ required: false, type: 'boolean', description: 'See CreateTenantDTO.auto_email_result_on_finalize.' })
+	@Transform(toBool)
+	@IsOptional()
+	@IsBoolean()
+	auto_email_result_on_finalize?: boolean;
+
+	// ── Per-tenant SMTP override ────────────────────────────────────
+	// When smtp_use_own is true, lab-result emails go through the tenant's
+	// own mailbox instead of the platform SMTP. Password is encrypted
+	// server-side before it hits the DB.
+
+	@ApiProperty({ required: false, type: 'boolean', description: 'True → use the tenant-provided smtp_* fields. False → platform default.' })
+	@Transform(toBool)
+	@IsOptional()
+	@IsBoolean()
+	smtp_use_own?: boolean;
+
+	@ApiProperty({ required: false, description: 'SMTP host, e.g. smtp.gmail.com.' })
+	@Transform(emptyToUndef)
+	@IsOptional()
+	@IsString()
+	@MaxLength(255)
+	smtp_host?: string;
+
+	@ApiProperty({ required: false, minimum: 1, maximum: 65535 })
+	@Transform(({ value }) => {
+		if (value === '' || value === undefined || value === null) return undefined;
+		const n = Number(value);
+		return Number.isFinite(n) ? n : value;
+	})
+	@IsOptional()
+	@IsNumber()
+	@Min(1)
+	smtp_port?: number;
+
+	@ApiProperty({ required: false, type: 'boolean', description: 'True for implicit TLS (usually port 465). Gmail App Passwords use false + port 587.' })
+	@Transform(toBool)
+	@IsOptional()
+	@IsBoolean()
+	smtp_secure?: boolean;
+
+	@ApiProperty({ required: false, description: 'SMTP username (usually the sending email address).' })
+	@Transform(emptyToUndef)
+	@IsOptional()
+	@IsString()
+	@MaxLength(255)
+	smtp_user?: string;
+
+	@ApiProperty({ required: false, description: 'SMTP password (Gmail: use an App Password — never the real account password). Empty string means "keep the stored value".' })
+	@Transform(emptyToUndef)
+	@IsOptional()
+	@IsString()
+	@MaxLength(2000)
+	smtp_password?: string;
+}
+
+/**
+ * One-off SMTP sanity test invoked from the Company Settings page. All
+ * fields except `password` are required; when `password` is empty, the
+ * server falls back to the stored ciphertext for the acting user's tenant
+ * so the operator can retest without re-typing.
+ */
+export class TestSmtpDTO {
+	@ApiProperty({ required: true })
+	@IsNotEmpty()
+	@IsString()
+	@MaxLength(255)
+	host!: string;
+
+	@ApiProperty({ required: true, minimum: 1, maximum: 65535 })
+	@Transform(({ value }) => (value === '' || value == null ? undefined : Number(value)))
+	@IsNumber()
+	@Min(1)
+	port!: number;
+
+	@ApiProperty({ required: false, type: 'boolean', default: false })
+	@Transform(toBool)
+	@IsOptional()
+	@IsBoolean()
+	secure?: boolean;
+
+	@ApiProperty({ required: true })
+	@IsNotEmpty()
+	@IsString()
+	@MaxLength(255)
+	user!: string;
+
+	@ApiProperty({ required: false, description: 'When empty, the stored ciphertext for the acting tenant is decrypted and used.' })
+	@Transform(emptyToUndef)
+	@IsOptional()
+	@IsString()
+	@MaxLength(2000)
+	password?: string;
+
+	@ApiProperty({ required: true, description: 'Recipient of the test email.' })
+	@IsNotEmpty()
+	@IsEmail()
+	@MaxLength(255)
+	to!: string;
 }
 
 export class SetTenantStatusDTO {

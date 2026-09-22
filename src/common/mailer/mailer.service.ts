@@ -11,8 +11,28 @@ export interface MailAttachment {
 	contentType?: string;
 }
 
+/**
+ * Per-send SMTP override. When provided, `rawSend` builds a one-off
+ * nodemailer transporter from this config instead of using the process-wide
+ * one — used for per-tenant SMTP so tenants can send from their own Gmail /
+ * Workspace account.
+ */
+export interface SmtpOverride {
+	host: string;
+	port: number;
+	secure: boolean;
+	user: string;
+	password: string;
+	from?: string; // defaults to `user`
+}
+
 export interface MailSendOptions {
 	attachments?: MailAttachment[];
+	smtp?: SmtpOverride;
+	// Friendly display name for the "From:" header. Recipients see it as
+	// `<fromName> <address>` in their inbox. Nodemailer safely handles the
+	// quoting when we pass name + address as an object.
+	fromName?: string;
 }
 
 @Injectable()
@@ -81,7 +101,7 @@ export class MailerService implements OnModuleInit {
 		]);
 		const cleanSubject = subject.trim();
 		const html = this.wrapInBaseLayout(cleanSubject, bodyHtml);
-		await this.rawSend(to, cleanSubject, html, undefined, options.attachments);
+		await this.rawSend(to, cleanSubject, html, undefined, options.attachments, options.smtp, options.fromName);
 	}
 
 	/**
@@ -89,7 +109,7 @@ export class MailerService implements OnModuleInit {
 	 * Prefer sendTemplate() for anything new.
 	 */
 	async send(to: string, subject: string, html: string, text?: string, options: MailSendOptions = {}): Promise<void> {
-		await this.rawSend(to, subject, html, text, options.attachments);
+		await this.rawSend(to, subject, html, text, options.attachments, options.smtp, options.fromName);
 	}
 
 	private wrapInBaseLayout(subject: string, body: string): string {
@@ -110,9 +130,30 @@ export class MailerService implements OnModuleInit {
 		html: string,
 		text?: string,
 		attachments?: MailAttachment[],
+		smtp?: SmtpOverride,
+		fromName?: string,
 	): Promise<void> {
 		const plainText = text ?? html.replace(/<[^>]+>/g, '');
-		if (!this.transporter) {
+		// Per-send SMTP override — used for per-tenant mailboxes. Built
+		// fresh per send since these are rare (only for lab-result emails)
+		// and we don't want to leak connections when tenants tweak creds.
+		const transporter = smtp
+			? nodemailer.createTransport({
+					host: smtp.host,
+					port: smtp.port,
+					secure: !!smtp.secure,
+					auth: { user: smtp.user, pass: smtp.password },
+			  })
+			: this.transporter;
+		const fromAddress = smtp?.from || smtp?.user || this.from;
+		// Nodemailer's object form `{ name, address }` handles the quoting
+		// and MIME encoding of the display name — safe for tenant names
+		// with commas, quotes, non-ASCII characters, etc.
+		const from = fromName?.trim()
+			? { name: fromName.trim(), address: fromAddress }
+			: fromAddress;
+
+		if (!transporter) {
 			this.logger.warn(`[STUB EMAIL] to=${to} subject="${subject}"`);
 			if (attachments?.length) {
 				this.logger.warn(`[STUB EMAIL] attachments=${attachments.map((a) => a.filename || a.path).join(', ')}`);
@@ -121,21 +162,27 @@ export class MailerService implements OnModuleInit {
 			return;
 		}
 		try {
-			const info = await this.transporter.sendMail({
-				from: this.from,
+			const info = await transporter.sendMail({
+				from,
 				to,
 				subject,
 				html,
 				text: plainText,
 				attachments,
 			});
-			this.logger.log(`Sent email to=${to} subject="${subject}" messageId=${info.messageId}`);
+			this.logger.log(`Sent email to=${to} subject="${subject}" messageId=${info.messageId}${smtp ? ' (tenant SMTP)' : ''}`);
 		} catch (err: any) {
 			this.logger.error(
 				`Failed to send email to=${to} subject="${subject}": ${err?.message}`,
 				err?.stack,
 			);
 			throw err;
+		} finally {
+			// Close the ad-hoc override transporter so it doesn't dangle.
+			// The shared `this.transporter` stays open across requests.
+			if (smtp && transporter && transporter !== this.transporter) {
+				try { transporter.close(); } catch { /* already closed */ }
+			}
 		}
 	}
 }

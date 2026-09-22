@@ -21,6 +21,7 @@ import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { LabReportService } from './lab-report.service';
 import {
 	CreateLabReportBatchDTO,
+	EmailLabReportResultDTO,
 	LabReportDashboardQueryDTO,
 	SetLabReportFinalDTO,
 	SetLabReportStatusDTO,
@@ -59,6 +60,23 @@ export class LabReportController {
 			return ApiResponseHelper.sendResponse(res, row);
 		} catch (error: any) {
 			return ApiResponseHelper.sendResponse(res, null, error?.message, error?.status ?? 500);
+		}
+	}
+
+	// SSR variant of the public view. Backend renders the report into a
+	// self-contained HTML page (EJS template), so the recipient's browser
+	// never fetches the raw JSON payload — keeps patient data off DevTools'
+	// Network tab. Returns text/html.
+	@Get('/public/render')
+	@ApiOperation({ summary: 'Lab Report - Server-rendered HTML of the public lab report. Returns a self-contained page instead of JSON.' })
+	async publicRender(@Res() res: Response, @Query('t') token: string) {
+		try {
+			if (!token) return res.status(400).type('text/plain').send('Missing token.');
+			const html = await this.service.renderPublicHtml(token);
+			if (!html) return res.status(404).type('text/plain').send('Lab report not found or link is invalid.');
+			return res.type('text/html').send(html);
+		} catch (error: any) {
+			return res.status(error?.status ?? 500).type('text/plain').send(error?.message || 'Failed to render report.');
 		}
 	}
 }
@@ -250,6 +268,39 @@ export class LabReportAuthedController {
 				name: current?.name || current?.username || 'system',
 			});
 			return ApiResponseHelper.sendResponse(res, updated, 'Lab report re-opened to draft.');
+		} catch (error: any) {
+			return ApiResponseHelper.sendResponse(res, null, error?.message, error?.status ?? 500);
+		}
+	}
+
+	@Post('/:uuid/email-result')
+	@ApiOperation({
+		summary:
+			'Lab Report - Email the finalized result to the patient. Frontend posts the print-ready HTML; backend renders it to PDF via headless Chromium so the attachment matches Print Preview exactly. Skips (does not error) when the patient has no email. Rejects when the report is not finalized.',
+	})
+	@ApiParam({ name: 'uuid', required: true })
+	@ApiBody({ type: EmailLabReportResultDTO })
+	async emailResult(
+		@Res() res: Response,
+		@Param('uuid') uuid: string,
+		@Body() data: EmailLabReportResultDTO,
+		@CurrentUser() current: any,
+	) {
+		try {
+			const existing = await this.service.findByUuid(uuid);
+			if (!existing) return ApiResponseHelper.sendNotFound(res, 'Lab report not found.');
+			assertOwns(current, existing);
+			const result = await this.service.emailResultToPatient(uuid, {
+				html: data.html,
+				base_href: data.base_href,
+				filename: data.filename,
+			});
+			const msg = result.sent
+				? 'Result emailed to patient.'
+				: result.skipped_reason === 'no_email'
+					? 'Skipped — patient has no email on file.'
+					: 'Skipped — report is not finalized.';
+			return ApiResponseHelper.sendResponse(res, result, msg);
 		} catch (error: any) {
 			return ApiResponseHelper.sendResponse(res, null, error?.message, error?.status ?? 500);
 		}
