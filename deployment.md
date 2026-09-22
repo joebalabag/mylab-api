@@ -253,7 +253,7 @@ server {
     # certbot will inject the ssl_certificate lines here.
     ssl_protocols TLSv1.2 TLSv1.3;
 
-    client_max_body_size 15M;       # room for payment slips, lab-header banners, doctor sigs
+    client_max_body_size 20M;       # room for payment slips, lab-header banners, doctor sigs, and finalized-report PDFs emailed to patients
 
     # gzip
     gzip on;

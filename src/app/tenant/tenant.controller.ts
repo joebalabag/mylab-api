@@ -26,10 +26,12 @@ import { DashboardQueryDTO } from '@/common/dto/dashboard-query.dto';
 import { imageFileFilter, makeFieldRoutedStorage, makeUploadStorage, toPublicUrl } from '@/common/helpers/upload.helper';
 
 import { TenantService } from './tenant.service';
+import { encryptSecret } from '@/common/crypto/aes.util';
 import {
 	AlterTenantSubscriptionDTO,
 	CreateTenantDTO,
 	SetTenantStatusDTO,
+	TestSmtpDTO,
 	UpdateTenantDTO,
 } from './dto/tenant.dto';
 
@@ -146,7 +148,7 @@ export class TenantController {
 				return ApiResponseHelper.sendNotFound(res, 'Tenant not found.');
 			}
 
-			const { company_logo: _ignoredLogo, lab_header_image: _ignoredHeader, ...rest } = data as any;
+			const { company_logo: _ignoredLogo, lab_header_image: _ignoredHeader, smtp_password: rawSmtpPassword, ...rest } = data as any;
 			const patch: any = {
 				...rest,
 				updated_by: user?.name || user?.username || 'system',
@@ -159,11 +161,41 @@ export class TenantController {
 				patch.lab_header_image = toPublicUrl(headerFile.path);
 				if (existing.lab_header_image) this.service.removeLabHeaderFile(existing.lab_header_image);
 			}
+			// SMTP password handling. Empty string / omitted = keep the
+			// stored ciphertext (so the operator can save other settings
+			// without re-typing the password every time). A real value
+			// replaces the stored one, encrypted at rest.
+			if (rawSmtpPassword && String(rawSmtpPassword).trim().length) {
+				patch.smtp_password_enc = encryptSecret(String(rawSmtpPassword));
+			}
 
 			const updated = await this.service.update(uuid, patch);
 			return ApiResponseHelper.sendResponse(res, updated, 'Tenant updated.');
 		} catch (error: any) {
 			return ApiResponseHelper.sendResponse(res, null, error?.message, 500);
+		}
+	}
+
+	@Post('/test-smtp')
+	@ApiOperation({ summary: 'Tenant - Fire a single test email against the supplied SMTP config. Password can be omitted to reuse the stored one.' })
+	@ApiBody({ type: TestSmtpDTO })
+	async testSmtp(@Res() res: Response, @Body() data: TestSmtpDTO, @CurrentUser() user: any) {
+		try {
+			if (!user?.tenant_uuid) {
+				return ApiResponseHelper.sendResponse(res, null, 'Tenant context required.', 400);
+			}
+			const result = await this.service.testSmtp({
+				tenant_uuid: user.tenant_uuid,
+				host: data.host,
+				port: data.port,
+				secure: data.secure,
+				user: data.user,
+				password: data.password,
+				to: data.to,
+			});
+			return ApiResponseHelper.sendResponse(res, result, 'Test email sent successfully.');
+		} catch (error: any) {
+			return ApiResponseHelper.sendResponse(res, null, error?.message || 'SMTP test failed.', error?.status ?? 500);
 		}
 	}
 

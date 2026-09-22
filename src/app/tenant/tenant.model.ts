@@ -1,8 +1,22 @@
-import { Model } from 'objection';
+import { Model, Pojo } from 'objection';
 
 export class Tenant extends Model {
 	static tableName = 'tenants';
 	static idColumn = 'uuid';
+
+	// Strip the encrypted SMTP password from every serialized response —
+	// the ciphertext is only useful server-side. Emit a boolean flag so the
+	// UI can tell whether a password is on file without ever seeing it.
+	$formatJson(json: Pojo): Pojo {
+		const out = super.$formatJson(json);
+		if (Object.prototype.hasOwnProperty.call(out, 'smtp_password_enc')) {
+			out.smtp_password_set = !!out.smtp_password_enc;
+			delete out.smtp_password_enc;
+		} else {
+			out.smtp_password_set = false;
+		}
+		return out;
+	}
 
 	uuid!: string;
 
@@ -55,6 +69,22 @@ export class Tenant extends Model {
 	// migration 20260809000100 for the full behavior. Column is
 	// NOT NULL DEFAULT 1 in the DB so this is safe to treat as required.
 	tester_signatory_count!: number;
+
+	// When true, tapping Tag as Final auto-emails the finalized PDF to
+	// the patient. When false, the send is deferred to a manual click of
+	// the Resend button in Print Preview. NOT NULL DEFAULT true in DB.
+	auto_email_result_on_finalize!: boolean;
+
+	// Per-tenant SMTP override for lab-result emails. When smtp_use_own is
+	// false the mailer falls back to the platform SMTP_* env vars. Password
+	// is AES-256-GCM ciphertext (see aes.util.ts) — never round-trip the
+	// plaintext back to the client.
+	smtp_use_own!: boolean;
+	smtp_host?: string | null;
+	smtp_port?: number | null;
+	smtp_secure!: boolean;
+	smtp_user?: string | null;
+	smtp_password_enc?: string | null;
 
 	// Cached from the latest approved subscription payment
 	current_subscription_plan_uuid?: string | null;

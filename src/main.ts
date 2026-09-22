@@ -26,6 +26,14 @@ async function bootstrap() {
 		}),
 	});
 
+	// Bump the default body-parser limit (100kb) so client-rendered PDF
+	// uploads for /lab-report/:uuid/email-result don't 413. The DTO caps
+	// pdf_base64 at ~15MB decoded — 20mb here gives headroom for JSON
+	// overhead. If nginx sits in front, its client_max_body_size must be
+	// raised to match.
+	app.useBodyParser('json', { limit: '20mb' });
+	app.useBodyParser('urlencoded', { limit: '20mb', extended: true });
+
 	app.useGlobalPipes(
 		new ValidationPipe({
 			whitelist: true,

@@ -1,13 +1,22 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { transaction as objectionTransaction } from 'objection';
 import { createHmac, timingSafeEqual } from 'crypto';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 import { PatientRequisition } from '../patient-requisition/patient-requisition.model';
 import { PatientRequisitionItem } from '../patient-requisition/patient-requisition-item.model';
 import { TestItem } from '../test-item/test-item.model';
 import { TestItemComponent } from '../test-item/test-item-component.model';
 import { ItemCategory } from '../item-category/item-category.model';
+import * as ejs from 'ejs';
+import * as QRCode from 'qrcode';
+
 import { UserService } from '../user/user.service';
+import { MailerService, SmtpOverride } from '@/common/mailer/mailer.service';
+import { renderHtmlToPdf } from '@/common/pdf/html-pdf.util';
+import { decryptSecret } from '@/common/crypto/aes.util';
 import { applyPagination, PagedResult } from '@/common/helpers/pagination.helper';
 
 import { LabReport, LabReportStatus } from './lab-report.model';
@@ -26,6 +35,9 @@ export interface LabReportWithMeta extends LabReport {
 	patient_sex?: string | null;
 	patient_birthdate?: Date | string | null;
 	patient_civil_status?: string | null;
+	// Snapshotted so the frontend can decide whether to auto-email the
+	// finalized result PDF (empty → skip send).
+	patient_email?: string | null;
 	// Comma-joined single-line address built from the patient's structured
 	// address columns — printed on the lab report header.
 	patient_address?: string | null;
@@ -105,7 +117,12 @@ export interface UncoveredRequisitionItem {
 
 @Injectable()
 export class LabReportService {
-	constructor(private readonly userService: UserService) {}
+	private readonly logger = new Logger(LabReportService.name);
+
+	constructor(
+		private readonly userService: UserService,
+		private readonly mailer: MailerService,
+	) {}
 
 	async listDashboard(filters: LabReportDashboardQueryDTO): Promise<PagedResult<LabReportWithMeta>> {
 		const query = LabReport.query()
@@ -123,6 +140,7 @@ export class LabReportService {
 				'p.sex as patient_sex',
 				'p.birthdate as patient_birthdate',
 				'p.civil_status as patient_civil_status',
+				'p.email as patient_email',
 				LabReport.knex().raw(
 					// Empty strings → NULL so CONCAT_WS skips them; result is
 					// NULL (not "") when every part is blank.
@@ -192,6 +210,7 @@ export class LabReportService {
 				'p.sex as patient_sex',
 				'p.birthdate as patient_birthdate',
 				'p.civil_status as patient_civil_status',
+				'p.email as patient_email',
 				LabReport.knex().raw(
 					// Empty strings → NULL so CONCAT_WS skips them; result is
 					// NULL (not "") when every part is blank.
@@ -245,6 +264,174 @@ export class LabReportService {
 			items: items.map((it) => ({ ...it, values: valuesByItem.get(it.uuid) || [] })),
 			public_token: signLabReportPublicToken(parent.uuid),
 		} as LabReportWithMeta;
+	}
+
+	/**
+	 * Server-render the public lab report as self-contained HTML. Verifies
+	 * the token, loads report + tenant, generates the QR code as a data URL,
+	 * then executes the EJS template. Keeps the JSON payload off the
+	 * recipient's Network tab: browsers see only the rendered HTML.
+	 * Returns null on unknown / invalid tokens so the controller can 404.
+	 */
+	async renderPublicHtml(token: string): Promise<string | null> {
+		const report = await this.findByPublicToken(token);
+		if (!report) return null;
+		const tenant = report.tenant || {};
+		const frontendOrigin = (process.env.FRONTEND_ORIGIN
+			|| (process.env.NODE_ENV === 'local' ? 'http://localhost:5173' : ''))
+			.replace(/\/+$/, '');
+		const apiOrigin = (process.env.API_ORIGIN || '').replace(/\/+$/, '');
+
+		// Public-share URL the QR points at. Same string the operator's Print
+		// Preview encodes — a recipient scanning the printed QR lands here.
+		const publicUrl = frontendOrigin
+			? `${frontendOrigin}/lab/view?t=${encodeURIComponent(token)}`
+			: '';
+		let qrDataUrl = '';
+		if (publicUrl) {
+			try {
+				qrDataUrl = await QRCode.toDataURL(publicUrl, { margin: 0, width: 128, errorCorrectionLevel: 'M' });
+			} catch (err: any) {
+				this.logger.warn(`Failed to generate QR for public render: ${err?.message}`);
+			}
+		}
+
+		// Header company name = first non-blank line of labHeaderText; fall
+		// back to tenant display name. Matches LabReportPrintable's rule.
+		const rawHeaderText = String(tenant.lab_header_text || '');
+		const headerLines = rawHeaderText.split(/\r?\n/);
+		const headerCompanyName = headerLines.find((l: string) => l.trim().length > 0) || tenant.display_name || '';
+		let dropped = false;
+		const restLinesArr: string[] = [];
+		for (const l of headerLines) {
+			if (!dropped && l.trim().length > 0) { dropped = true; continue; }
+			if (dropped) restLinesArr.push(l);
+		}
+		const headerRestLines = restLinesArr.join('\n').trim();
+
+		// Assets served through the API's /public/ mount. When frontend
+		// nginx proxies /public/ back to the API, relative paths work in
+		// production; for cross-origin fetches during dev we prefer absolute.
+		const publicAsset = (p: string | undefined | null): string => {
+			if (!p) return '';
+			const clean = String(p).replace(/^\/+/, '');
+			if (apiOrigin) return `${apiOrigin}/public/${clean}`;
+			return `/public/${clean}`;
+		};
+		const tenantForTemplate = {
+			name:            tenant.display_name || tenant.legal_name || '',
+			logo:            publicAsset(tenant.company_logo),
+			labHeaderMode:   tenant.lab_header_mode || 'logo_text',
+			labHeaderImage:  publicAsset(tenant.lab_header_image),
+		};
+
+		// Chemistry-flat rule mirrors LabReportPrintable — chem panels get
+		// one continuous analyte table instead of per-item blocks.
+		const isChemistryFlat = (report.item_category_code || '') === 'CHEM';
+		const anyUnitAcross = (report.items || []).some((it: any) =>
+			(it.values || []).some((v: any) => !!(v.unit_of_measure && String(v.unit_of_measure).trim())),
+		);
+		const anyReferenceAcross = (report.items || []).some((it: any) =>
+			(it.values || []).some((v: any) => !!(v.reference_range && String(v.reference_range).trim())),
+		);
+
+		// Colored category-band border + fill (8% alpha over the hex).
+		const rawColor = String(report.item_category_color || '#64748b').trim();
+		const hexMatch = /^#([0-9a-f]{6})$/i.exec(rawColor);
+		const categoryColor = rawColor;
+		let categoryFill = 'rgba(100, 116, 139, 0.08)';
+		if (hexMatch) {
+			const r = parseInt(hexMatch[1].slice(0, 2), 16);
+			const g = parseInt(hexMatch[1].slice(2, 4), 16);
+			const b = parseInt(hexMatch[1].slice(4, 6), 16);
+			categoryFill = `rgba(${r}, ${g}, ${b}, 0.08)`;
+		}
+
+		// Manila-locale datetimes for the human-facing fields.
+		const fmtDT = (v: any): string => {
+			if (!v) return '';
+			try {
+				const d = v instanceof Date ? v : new Date(v);
+				if (isNaN(d.getTime())) return '';
+				return d.toLocaleString('en-PH', { timeZone: 'Asia/Manila' });
+			} catch { return ''; }
+		};
+
+		// Detailed "11Y-5M-4D" age string — same rule as the frontend.
+		const ageStr = (() => {
+			const bd = report.patient_birthdate;
+			if (!bd) return '';
+			const d = bd instanceof Date ? bd : new Date(bd as any);
+			if (isNaN(d.getTime())) return '';
+			const now = new Date();
+			let years = now.getFullYear() - d.getFullYear();
+			let months = now.getMonth() - d.getMonth();
+			let days = now.getDate() - d.getDate();
+			if (days < 0) {
+				months--;
+				const prevMonthLen = new Date(now.getFullYear(), now.getMonth(), 0).getDate();
+				days += prevMonthLen;
+			}
+			if (months < 0) { years--; months += 12; }
+			return `${years}Y-${months}M-${days}D`;
+		})();
+
+		// Sex → title-case (m / male / MALE → Male).
+		const sexStr = (() => {
+			const raw = String(report.patient_sex || '').trim().toLowerCase();
+			if (!raw) return '';
+			if (raw === 'm' || raw === 'male') return 'Male';
+			if (raw === 'f' || raw === 'female') return 'Female';
+			return raw.charAt(0).toUpperCase() + raw.slice(1);
+		})();
+
+		const patientName = [report.patient_first_name, report.patient_last_name].filter(Boolean).join(' ');
+
+		const locals = {
+			report,
+			tenant: tenantForTemplate,
+			qrDataUrl,
+			publicUrl,
+			headerCompanyName,
+			headerRestLines,
+			isChemistryFlat,
+			anyUnitAcross,
+			anyReferenceAcross,
+			categoryColor,
+			categoryFill,
+			patientName,
+			ageStr,
+			sexStr,
+			specimenCollectedAtFmt: fmtDT(report.specimen_collected_at),
+			finalizedAtFmt: fmtDT(report.finalized_at),
+			printedAtFmt: fmtDT(new Date()),
+			// Panel value grouping (mirror of LabReportPrintable.groupValuesBySection).
+			groupValuesBySection: (values: any[]): Array<{ section: string; values: any[] }> => {
+				if (!Array.isArray(values) || !values.length) return [];
+				const map = new Map<string, any[]>();
+				const order: string[] = [];
+				for (const v of values) {
+					const key = v.section || '';
+					if (!map.has(key)) { map.set(key, []); order.push(key); }
+					map.get(key)!.push(v);
+				}
+				return order.map((k) => ({ section: k, values: map.get(k)! }));
+			},
+			// Matrix rows × cols with a plain object keyed "row|col" for EJS
+			// (no Map interop in EJS scriptlets).
+			buildMatrixGrid: (it: any): { rows: string[]; cols: string[]; cells: Record<string, any> } => {
+				const cfg = it?.matrix_config || {};
+				const rows = Array.isArray(cfg.rows) ? cfg.rows : [];
+				const cols = Array.isArray(cfg.cols) ? cfg.cols : [];
+				const cells: Record<string, any> = {};
+				for (const v of (it.values || [])) cells[String(v.component_code)] = v;
+				return { rows, cols, cells };
+			},
+		};
+
+		const templatePath = path.join(__dirname, 'templates', 'public-lab-report.ejs');
+		const html = await ejs.renderFile(templatePath, locals, { async: true });
+		return html;
 	}
 
 	// Public (no-auth) variant used by the QR-code landing page. Verifies the
@@ -1006,6 +1193,119 @@ export class LabReportService {
 			patch.medtech_license = null;
 		}
 		return (await LabReport.query().patchAndFetchById(lab_report_uuid, patch as any)) as unknown as LabReport;
+	}
+
+	/**
+	 * Email the finalized report to the patient. Frontend posts the same
+	 * print-ready HTML the print popup uses; we render it to PDF via headless
+	 * Chromium (Puppeteer) so the attachment matches Print Preview exactly.
+	 * Returns a flag so the caller can distinguish sent / no-email / not-finalized.
+	 */
+	async emailResultToPatient(
+		lab_report_uuid: string,
+		payload: { html: string; base_href?: string; filename?: string },
+	): Promise<{ sent: boolean; skipped_reason?: 'no_email' | 'not_finalized' }> {
+		const report = await this.findByUuid(lab_report_uuid);
+		if (!report) throw new BadRequestException('Lab report not found.');
+		if (report.status !== 'finalized') {
+			return { sent: false, skipped_reason: 'not_finalized' };
+		}
+		const to = (report.patient_email || '').trim();
+		if (!to) return { sent: false, skipped_reason: 'no_email' };
+
+		if (!payload.html?.trim()) throw new BadRequestException('Empty HTML payload.');
+		// Fall back to FRONTEND_ORIGIN when the client didn't supply a base
+		// (e.g. an older cached bundle). Without one, relative asset URLs in
+		// the HTML would fail to resolve during render.
+		const baseHref = payload.base_href?.trim() || process.env.FRONTEND_ORIGIN?.trim() || undefined;
+		const pdfBuf = await renderHtmlToPdf(payload.html, {
+			baseHref,
+			label: report.lab_number ? String(report.lab_number) : lab_report_uuid,
+		});
+		if (!pdfBuf.length) throw new BadRequestException('Puppeteer produced an empty PDF.');
+
+		const tenantRow = await LabReport.knex()('tenants')
+			.select('display_name', 'legal_name',
+				'smtp_use_own', 'smtp_host', 'smtp_port', 'smtp_secure',
+				'smtp_user', 'smtp_password_enc')
+			.where({ uuid: report.tenant_uuid })
+			.first();
+		const tenantName = tenantRow?.display_name || tenantRow?.legal_name || 'MyLab';
+
+		// Assemble the per-send SMTP override when the tenant opted in AND
+		// every required field is populated. Missing anything → fall back to
+		// the platform mailer so we still get the email out.
+		let smtpOverride: SmtpOverride | undefined;
+		if (tenantRow?.smtp_use_own && tenantRow.smtp_host && tenantRow.smtp_port && tenantRow.smtp_user && tenantRow.smtp_password_enc) {
+			const password = decryptSecret(tenantRow.smtp_password_enc);
+			if (password) {
+				smtpOverride = {
+					host:     String(tenantRow.smtp_host),
+					port:     Number(tenantRow.smtp_port),
+					secure:   !!tenantRow.smtp_secure,
+					user:     String(tenantRow.smtp_user),
+					password,
+				};
+			} else {
+				this.logger.warn(`Tenant ${report.tenant_uuid} opted into own SMTP but password could not be decrypted; falling back to platform default.`);
+			}
+		}
+
+		const patientName =
+			[report.patient_first_name, report.patient_last_name].filter(Boolean).join(' ').trim() ||
+			'Patient';
+		// Actual test-item names printed on the report (e.g. "LDL Cholesterol,
+		// Potassium"). findByUuid already loads items[] in display order —
+		// prefer that over the coarser category title or the createBatch-time
+		// summary so the recipient sees exactly what was run.
+		const testSummary =
+			(Array.isArray((report as any).items) && (report as any).items.length
+				? (report as any).items.map((it: any) => it.test_name).filter(Boolean).join(', ')
+				: '')
+			|| (report as any).test_items_summary
+			|| (report as any).item_category_print_title
+			|| '';
+		const finalizedAt = report.finalized_at
+			? new Date(report.finalized_at as any).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })
+			: '';
+
+		// nodemailer's attachment path option needs a filesystem path, so
+		// spool the PDF to the OS temp dir and clean it up after send. The
+		// filename shown in the email is set via `attachments[].filename`.
+		const safeLabNumber = String(report.lab_number || report.uuid).replace(/[^A-Za-z0-9_.-]/g, '_');
+		const attachFilename = payload.filename?.trim() || `Lab Report ${safeLabNumber}.pdf`;
+		const tmpPath = path.join(os.tmpdir(), `mylab-${safeLabNumber}-${Date.now()}.pdf`);
+		await fs.promises.writeFile(tmpPath, pdfBuf);
+
+		try {
+			await this.mailer.sendTemplate(
+				to,
+				'lab-report-ready',
+				{
+					patient_name: patientName,
+					tenant_name: tenantName,
+					lab_number: report.lab_number || '(pending)',
+					test_summary: testSummary,
+					finalized_at: finalizedAt,
+				},
+				{
+					attachments: [
+						{ filename: attachFilename, path: tmpPath, contentType: 'application/pdf' },
+					],
+					smtp: smtpOverride,
+					// Recipient sees "MyLab Diagnostics <lab@yourclinic.com>"
+					// instead of a bare email — makes the message obviously
+					// legitimate. Falls back to the platform name when the
+					// tenant has no display name on record.
+					fromName: tenantName,
+				},
+			);
+			return { sent: true };
+		} finally {
+			fs.promises.unlink(tmpPath).catch((err) => {
+				this.logger.warn(`Failed to remove temp PDF ${tmpPath}: ${err?.message}`);
+			});
+		}
 	}
 
 	/**

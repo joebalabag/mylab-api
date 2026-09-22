@@ -249,6 +249,44 @@ export class SetLabReportFinalDTO {
 	signatory_password?: string;
 }
 
+/**
+ * Send the finalized report to the patient's email. Frontend posts the same
+ * print-ready HTML the print popup uses; the backend spins up headless
+ * Chromium (Puppeteer) and renders that HTML to PDF using Chrome's real
+ * print pipeline — so the attachment matches Print Preview pixel-for-pixel.
+ * Server pulls the recipient address from patients.email so nothing about
+ * the recipient is client-controlled.
+ */
+export class EmailLabReportResultDTO {
+	@ApiProperty({
+		required: true,
+		description:
+			'Full <!doctype html> document to render. Must include an @page rule so preferCSSPageSize picks the paper size. Root-relative asset URLs are resolved against base_href.',
+	})
+	@IsNotEmpty()
+	@IsString()
+	@MaxLength(15_000_000) // 15 MB — HTML with copied stylesheets is much smaller than this in practice
+	html!: string;
+
+	@ApiProperty({
+		required: false,
+		description:
+			'Origin (e.g. https://mylab.edgetechph.net) injected as <base href="..."> so relative asset URLs in the HTML resolve during render. Falls back to the frontend origin config on the server.',
+	})
+	@Transform(emptyToUndef)
+	@IsOptional()
+	@IsString()
+	@MaxLength(2048)
+	base_href?: string;
+
+	@ApiProperty({ required: false, description: 'Suggested attachment filename. Defaults to Lab Report <lab_number>.pdf.' })
+	@Transform(emptyToUndef)
+	@IsOptional()
+	@IsString()
+	@MaxLength(255)
+	filename?: string;
+}
+
 export class VoidLabReportDTO {
 	@ApiProperty({ required: true })
 	@IsNotEmpty()
