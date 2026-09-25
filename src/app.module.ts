@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -7,6 +7,8 @@ import { SubscriptionGuard } from './common/guards/subscription.guard';
 import { KnexModule } from './knex/knex.module';
 import { MailerModule } from './common/mailer/mailer.module';
 import { HealthModule } from './app/health/health.module';
+import { PresenceModule } from './app/presence/presence.module';
+import { PresenceInterceptor } from './app/presence/presence.interceptor';
 import { AuthModule } from './app/auth/auth.module';
 import { AdminModule } from './app/admin/admin.module';
 import { TenantModule } from './app/tenant/tenant.module';
@@ -50,6 +52,7 @@ import { OfflineSyncModule } from './app/offline-sync/offline-sync.module';
 		]),
 		KnexModule,
 		HealthModule,
+		PresenceModule,
 		MailerModule,
 		AuthModule,
 		AdminModule,
@@ -84,6 +87,10 @@ import { OfflineSyncModule } from './app/offline-sync/offline-sync.module';
 		{
 			provide: APP_GUARD,
 			useClass: SubscriptionGuard,
+		},
+		{
+			provide: APP_INTERCEPTOR,
+			useClass: PresenceInterceptor,
 		},
 	],
 })
