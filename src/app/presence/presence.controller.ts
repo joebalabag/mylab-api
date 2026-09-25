@@ -36,6 +36,16 @@ export class PresenceController {
 		return ApiResponseHelper.sendResponse(res, { ok: true, at: new Date().toISOString() });
 	}
 
+	@Post('/forget')
+	@ApiOperation({
+		summary:
+			"Remove the caller from the in-memory presence map. Called by the frontend on explicit logout and on tab/browser close (via navigator.sendBeacon / keepalive fetch), so users disappear from the super-admin panel immediately instead of waiting for the passive 2-min age-out.",
+	})
+	forget(@Res() res: Response, @CurrentUser() user: any) {
+		if (user?.uuid) this.presence.forget(user.uuid);
+		return ApiResponseHelper.sendResponse(res, { ok: true });
+	}
+
 	@Get('/active-users')
 	@ApiOperation({
 		summary:
