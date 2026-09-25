@@ -16,6 +16,10 @@ export class TestItemComponent extends Model {
 	section?: string | null;
 	display_order!: number;
 
+	si_conversion_factor?: number | string | null;
+	si_unit_of_measure?: string | null;
+	si_reference_range?: string | null;
+
 	created_by?: string;
 	updated_by?: string;
 	created_at?: Date;

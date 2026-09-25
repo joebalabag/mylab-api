@@ -196,6 +196,8 @@ export class AuthController {
 					uuid: user.uuid,
 					username: user.username,
 					name: user.name,
+					lab_display_name: user.lab_display_name ?? null,
+					license_number: user.license_number ?? null,
 					email: user.email,
 					role: user.role,
 					tenant_uuid: user.tenant_uuid,

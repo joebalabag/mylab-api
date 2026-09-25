@@ -18,6 +18,10 @@ export class LabResultValue extends Model {
 	reference_range?: string | null;
 	lookup_values?: string | null;
 
+	si_conversion_factor?: number | string | null;
+	si_unit_of_measure?: string | null;
+	si_reference_range?: string | null;
+
 	value_text?: string | null;
 	value_numeric?: number | null;
 	flag?: ResultValueFlag | null;

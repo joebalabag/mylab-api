@@ -119,6 +119,9 @@ export class TestItemService {
 		method?: string;
 		lookup_values?: string;
 		matrix_config?: { rows: string[]; cols: string[] } | null;
+		si_conversion_factor?: number | null;
+		si_unit_of_measure?: string;
+		si_reference_range?: string;
 		price?: number;
 		description?: string;
 		created_by: string;
@@ -135,6 +138,9 @@ export class TestItemService {
 			method: data.method ?? null,
 			lookup_values: data.lookup_values ?? null,
 			matrix_config: data.matrix_config ?? null,
+			si_conversion_factor: data.si_conversion_factor ?? null,
+			si_unit_of_measure: data.si_unit_of_measure ?? null,
+			si_reference_range: data.si_reference_range ?? null,
 			price: data.price ?? 0,
 			description: data.description ?? null,
 			status: 'active',
@@ -195,6 +201,9 @@ export class TestItemService {
 						reference_range: row.reference_range ?? null,
 						lookup_values: row.lookup_values ?? null,
 						section: row.section ?? null,
+						si_conversion_factor: row.si_conversion_factor ?? null,
+						si_unit_of_measure: row.si_unit_of_measure ?? null,
+						si_reference_range: row.si_reference_range ?? null,
 						display_order: order,
 						updated_by,
 					} as any);
@@ -209,6 +218,9 @@ export class TestItemService {
 						reference_range: row.reference_range ?? null,
 						lookup_values: row.lookup_values ?? null,
 						section: row.section ?? null,
+						si_conversion_factor: row.si_conversion_factor ?? null,
+						si_unit_of_measure: row.si_unit_of_measure ?? null,
+						si_reference_range: row.si_reference_range ?? null,
 						display_order: order,
 						created_by: updated_by,
 					} as any)) as unknown as TestItemComponent;

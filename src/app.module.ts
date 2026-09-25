@@ -6,6 +6,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { SubscriptionGuard } from './common/guards/subscription.guard';
 import { KnexModule } from './knex/knex.module';
 import { MailerModule } from './common/mailer/mailer.module';
+import { HealthModule } from './app/health/health.module';
 import { AuthModule } from './app/auth/auth.module';
 import { AdminModule } from './app/admin/admin.module';
 import { TenantModule } from './app/tenant/tenant.module';
@@ -48,6 +49,7 @@ import { OfflineSyncModule } from './app/offline-sync/offline-sync.module';
 			{ name: 'login', ttl: 60_000, limit: 5 },
 		]),
 		KnexModule,
+		HealthModule,
 		MailerModule,
 		AuthModule,
 		AdminModule,
