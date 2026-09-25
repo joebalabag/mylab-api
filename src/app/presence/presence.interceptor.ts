@@ -1,6 +1,7 @@
 import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { PresenceService } from './presence.service';
+import { extractClientIp, extractUserAgent } from './request-meta';
 
 /**
  * Global interceptor that stamps req.user in the PresenceService on every
@@ -24,6 +25,8 @@ export class PresenceInterceptor implements NestInterceptor {
 				tenant_uuid: user.tenant_uuid,
 				role: user.role,
 				type: user.type,
+				ip: extractClientIp(req),
+				user_agent: extractUserAgent(req),
 			});
 		}
 		return next.handle();

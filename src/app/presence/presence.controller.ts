@@ -1,12 +1,13 @@
-import { Controller, Get, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { ApiResponseHelper } from '@/common/helpers/response.helper';
 
 import { PresenceService } from './presence.service';
+import { extractClientIp, extractUserAgent } from './request-meta';
 import { Tenant } from '../tenant/tenant.model';
 
 @ApiTags('Presence')
@@ -21,7 +22,7 @@ export class PresenceController {
 		summary:
 			"Bump the caller's last-seen timestamp in the in-memory presence map. Called by the frontend every ~30s per open tab so idle sessions stay visible in the super-admin active-users panel.",
 	})
-	heartbeat(@Res() res: Response, @CurrentUser() user: any) {
+	heartbeat(@Req() req: Request, @Res() res: Response, @CurrentUser() user: any) {
 		this.presence.touch({
 			uuid: user?.uuid,
 			username: user?.username,
@@ -29,6 +30,8 @@ export class PresenceController {
 			tenant_uuid: user?.tenant_uuid,
 			role: user?.role,
 			type: user?.type,
+			ip: extractClientIp(req),
+			user_agent: extractUserAgent(req),
 		});
 		return ApiResponseHelper.sendResponse(res, { ok: true, at: new Date().toISOString() });
 	}
@@ -71,6 +74,8 @@ export class PresenceController {
 					tenant_store_code: t?.store_code ?? null,
 					last_seen_at: new Date(e.last_seen_at).toISOString(),
 					seconds_ago: Math.round((now - e.last_seen_at) / 1000),
+					ip: e.ip ?? null,
+					user_agent: e.user_agent ?? null,
 				};
 			})
 			.sort((a, b) => a.seconds_ago - b.seconds_ago);

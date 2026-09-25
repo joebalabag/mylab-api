@@ -8,6 +8,8 @@ export interface PresenceEntry {
 	role: string;
 	type: 'admin' | 'user';
 	last_seen_at: number;
+	ip?: string;
+	user_agent?: string;
 }
 
 /**
@@ -57,8 +59,14 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
 		tenant_uuid?: string;
 		role?: string;
 		type?: 'admin' | 'user';
+		ip?: string;
+		user_agent?: string;
 	}): void {
 		if (!user?.uuid) return;
+		// Preserve last-known ip / user_agent when the current stamp came from
+		// a channel that didn't carry them (unlikely, but keeps the panel from
+		// briefly blanking those fields between requests).
+		const prev = this.entries.get(user.uuid);
 		this.entries.set(user.uuid, {
 			uuid: user.uuid,
 			username: user.username ?? '',
@@ -67,6 +75,8 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
 			role: user.role ?? '',
 			type: user.type ?? 'user',
 			last_seen_at: Date.now(),
+			ip: user.ip ?? prev?.ip,
+			user_agent: user.user_agent ?? prev?.user_agent,
 		});
 	}
 
