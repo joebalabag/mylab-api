@@ -103,6 +103,32 @@ export class CreateTestItemDTO {
 	@IsOptional()
 	matrix_config?: { rows: string[]; cols: string[] } | null;
 
+	@ApiProperty({
+		required: false,
+		example: 0.0555,
+		description:
+			'SI conversion multiplier for chemistry singles. si_value = raw × factor. Prints alongside conventional value.',
+	})
+	@Transform(emptyToUndef)
+	@Type(() => Number)
+	@IsOptional()
+	@IsNumber()
+	si_conversion_factor?: number;
+
+	@ApiProperty({ required: false, example: 'mmol/L', description: 'SI unit label printed next to the SI value.' })
+	@Transform(emptyToUndef)
+	@IsOptional()
+	@IsString()
+	@MaxLength(50)
+	si_unit_of_measure?: string;
+
+	@ApiProperty({ required: false, example: '3.9-6.1', description: 'SI reference range text printed under the SI column.' })
+	@Transform(emptyToUndef)
+	@IsOptional()
+	@IsString()
+	@MaxLength(500)
+	si_reference_range?: string;
+
 	@ApiProperty({ required: false, example: 250, description: 'Item price. Defaults to 0.' })
 	@Transform(emptyToUndef)
 	@Type(() => Number)
@@ -184,6 +210,27 @@ export class UpdateTestItemDTO {
 	@ApiProperty({ required: false, description: 'JSON { rows, cols } for matrix result_type.' })
 	@IsOptional()
 	matrix_config?: { rows: string[]; cols: string[] } | null;
+
+	@ApiProperty({ required: false, description: 'SI conversion multiplier for chemistry singles.' })
+	@Transform(emptyToUndef)
+	@Type(() => Number)
+	@IsOptional()
+	@IsNumber()
+	si_conversion_factor?: number | null;
+
+	@ApiProperty({ required: false })
+	@Transform(emptyToUndef)
+	@IsOptional()
+	@IsString()
+	@MaxLength(50)
+	si_unit_of_measure?: string;
+
+	@ApiProperty({ required: false })
+	@Transform(emptyToUndef)
+	@IsOptional()
+	@IsString()
+	@MaxLength(500)
+	si_reference_range?: string;
 
 	@ApiProperty({ required: false })
 	@Transform(emptyToUndef)
@@ -268,6 +315,27 @@ export class TestItemComponentRowDTO {
 	@IsString()
 	@MaxLength(100)
 	section?: string;
+
+	@ApiProperty({ required: false, example: 0.0555, description: 'SI conversion multiplier for chemistry panels.' })
+	@Transform(emptyToUndef)
+	@Type(() => Number)
+	@IsOptional()
+	@IsNumber()
+	si_conversion_factor?: number;
+
+	@ApiProperty({ required: false, example: 'mmol/L' })
+	@Transform(emptyToUndef)
+	@IsOptional()
+	@IsString()
+	@MaxLength(50)
+	si_unit_of_measure?: string;
+
+	@ApiProperty({ required: false, example: '3.9-6.1' })
+	@Transform(emptyToUndef)
+	@IsOptional()
+	@IsString()
+	@MaxLength(500)
+	si_reference_range?: string;
 
 	@ApiProperty({ required: false, example: 0, description: 'Row order on printed reports. Defaults to array position when omitted.' })
 	@Transform(emptyToUndef)

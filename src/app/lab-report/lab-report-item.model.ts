@@ -20,6 +20,10 @@ export class LabReportItem extends Model {
 	method?: string | null;
 	matrix_config?: { rows: string[]; cols: string[] } | null;
 
+	si_conversion_factor?: number | string | null;
+	si_unit_of_measure?: string | null;
+	si_reference_range?: string | null;
+
 	narrative_text?: string | null;
 	display_order!: number;
 	is_active!: boolean;

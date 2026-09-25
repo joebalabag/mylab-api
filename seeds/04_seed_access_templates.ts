@@ -256,6 +256,108 @@ const ROWS: Row[] = [
 		sub_navigation: 'all-access',
 		remarks: 'View the Setup Readiness checklist — the one-time configuration required before the lab can accept patients.',
 	},
+
+	// ─── Reports — one row per report page ─────────────────────────────
+	// Each report can be granted independently. `main_navigation = 'reports'`
+	// gates the sidebar section; the fine-grained `sub_navigation` controls
+	// which individual reports appear inside the section. Backfill grants are
+	// handled by migration 20260925000100_grant_report_access_rows.
+	{
+		navigation_id: 400,
+		catalog_id: 1,
+		catalog: 'reports',
+		main_navigation: 'reports',
+		sub_navigation: 'summary',
+		remarks: 'Consolidated overview of sales, tests, and cash movement for the period.',
+	},
+	{
+		navigation_id: 401,
+		catalog_id: 2,
+		catalog: 'reports',
+		main_navigation: 'reports',
+		sub_navigation: 'monthly sales',
+		remarks: 'Monthly sales roll-up across payment methods, categories, and cashiers.',
+	},
+	{
+		navigation_id: 402,
+		catalog_id: 3,
+		catalog: 'reports',
+		main_navigation: 'reports',
+		sub_navigation: 'monthly tests',
+		remarks: 'Monthly test volume by category / test item — supports capacity planning.',
+	},
+	{
+		navigation_id: 403,
+		catalog_id: 4,
+		catalog: 'reports',
+		main_navigation: 'reports',
+		sub_navigation: 'cashier sales',
+		remarks: 'Per-cashier collections breakdown — shift totals by payment method.',
+	},
+	{
+		navigation_id: 404,
+		catalog_id: 5,
+		catalog: 'reports',
+		main_navigation: 'reports',
+		sub_navigation: 'voids',
+		remarks: 'Voided payments log with reason and voiding cashier — supports audit.',
+	},
+	{
+		navigation_id: 405,
+		catalog_id: 6,
+		catalog: 'reports',
+		main_navigation: 'reports',
+		sub_navigation: 'daily sales',
+		remarks: 'Sales totals for the selected day, grouped by payment method and category.',
+	},
+	{
+		navigation_id: 406,
+		catalog_id: 7,
+		catalog: 'reports',
+		main_navigation: 'reports',
+		sub_navigation: 'daily detailed sales',
+		remarks: 'Line-item view of every paid transaction for the selected day.',
+	},
+	{
+		navigation_id: 407,
+		catalog_id: 8,
+		catalog: 'reports',
+		main_navigation: 'reports',
+		sub_navigation: 'daily tests',
+		remarks: 'Daily test volume — count of tests performed by category / test item.',
+	},
+	{
+		navigation_id: 408,
+		catalog_id: 9,
+		catalog: 'reports',
+		main_navigation: 'reports',
+		sub_navigation: 'discounts',
+		remarks: 'Discounts applied for the period — by discount rule, cashier, and patient type.',
+	},
+	{
+		navigation_id: 409,
+		catalog_id: 10,
+		catalog: 'reports',
+		main_navigation: 'reports',
+		sub_navigation: 'expenses',
+		remarks: 'Tenant expenses log for the period — grouped by category.',
+	},
+	{
+		navigation_id: 410,
+		catalog_id: 11,
+		catalog: 'reports',
+		main_navigation: 'reports',
+		sub_navigation: 'payment summary',
+		remarks: 'Payment summary — cash / e-wallet / bank transfer / arrangement totals.',
+	},
+	{
+		navigation_id: 411,
+		catalog_id: 12,
+		catalog: 'reports',
+		main_navigation: 'reports',
+		sub_navigation: 'test analytics',
+		remarks: 'Test analytics — trend charts, most-requested tests, turnaround stats.',
+	},
 ];
 
 export async function seed(knex: Knex): Promise<void> {

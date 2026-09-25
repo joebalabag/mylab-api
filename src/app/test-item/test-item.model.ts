@@ -29,6 +29,10 @@ export class TestItem extends Model {
 	lookup_values?: string | null;
 	matrix_config?: MatrixConfig | null;
 
+	si_conversion_factor?: number | string | null;
+	si_unit_of_measure?: string | null;
+	si_reference_range?: string | null;
+
 	price!: number;
 	description?: string | null;
 	status!: string;

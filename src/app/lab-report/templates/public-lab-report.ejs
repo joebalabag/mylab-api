@@ -52,6 +52,8 @@
 	tbody tr.section-head td { padding-top: 3px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #334155; border-bottom: none; }
 	td.unit, td.ref, th.unit, th.ref { color: #64748b; white-space: nowrap; }
 	td.pl-6 { padding-left: 24px; }
+	/* Vertical separator between the conventional and SI column groups. */
+	th.si-start, td.si-start { border-left: 1px solid #cbd5e1; padding-left: 8px; }
 
 	.matrix td, .matrix th { padding: 2px 8px; }
 	.matrix th.corner { border-bottom: 1px solid #e2e8f0; }
@@ -169,13 +171,28 @@
 
 		<!-- ── Results ───────────────────────────────────────────── -->
 		<% if (isChemistryFlat) { %>
-			<table>
+			<% var flatCols = 2 + (anyUnitAcross ? 1 : 0) + (anyReferenceAcross ? 1 : 0) + (anySiAcross ? 3 : 0); %>
+			<% // table-layout:fixed + <col> widths so the browser doesn't shrink
+			   // Result to a single-letter column when SI adds 3 more columns. %>
+			<table style="table-layout: fixed;">
+				<colgroup>
+					<col style="width: 26%;" />
+					<col style="width: 12%;" />
+					<% if (anyUnitAcross) { %><col style="width: 8%;" /><% } %>
+					<% if (anyReferenceAcross) { %><col style="width: <%= anySiAcross ? 14 : 22 %>%;" /><% } %>
+					<% if (anySiAcross) { %><col style="width: 12%;" /><% } %>
+					<% if (anySiAcross) { %><col style="width: 8%;" /><% } %>
+					<% if (anySiAcross) { %><col style="width: 14%;" /><% } %>
+				</colgroup>
 				<thead>
 					<tr>
-						<th style="width:33%;">Analyte</th>
+						<th>Analyte</th>
 						<th>Result</th>
-						<% if (anyUnitAcross) { %><th class="unit" style="width:64px;">Unit</th><% } %>
-						<% if (anyReferenceAcross) { %><th class="ref" style="width:220px;">Reference</th><% } %>
+						<% if (anyUnitAcross) { %><th class="unit">Unit</th><% } %>
+						<% if (anyReferenceAcross) { %><th class="ref">Reference</th><% } %>
+						<% if (anySiAcross) { %><th class="unit si-start">SI Value</th><% } %>
+						<% if (anySiAcross) { %><th class="unit">SI Unit</th><% } %>
+						<% if (anySiAcross) { %><th class="ref">SI Reference</th><% } %>
 					</tr>
 				</thead>
 				<tbody>
@@ -187,11 +204,14 @@
 									<td><%= v.value_text || '' %></td>
 									<% if (anyUnitAcross) { %><td class="unit"><%= v.unit_of_measure || '' %></td><% } %>
 									<% if (anyReferenceAcross) { %><td class="ref"><%= v.reference_range || '' %></td><% } %>
+									<% if (anySiAcross) { %><td class="unit si-start"><%= siValue(v) %></td><% } %>
+									<% if (anySiAcross) { %><td class="unit"><%= hasSi(v) ? (v.si_unit_of_measure || '') : '' %></td><% } %>
+									<% if (anySiAcross) { %><td class="ref"><%= hasSi(v) ? (v.si_reference_range || '') : '' %></td><% } %>
 								</tr>
 							<% }); %>
 						<% } else if (it.result_type === 'panel') { %>
 							<tr class="section-head">
-								<td colspan="<%= 2 + (anyUnitAcross ? 1 : 0) + (anyReferenceAcross ? 1 : 0) %>">
+								<td colspan="<%= flatCols %>">
 									<%= it.test_name %>
 								</td>
 							</tr>
@@ -201,11 +221,14 @@
 									<td><%= v.value_text || '' %></td>
 									<% if (anyUnitAcross) { %><td class="unit"><%= v.unit_of_measure || '' %></td><% } %>
 									<% if (anyReferenceAcross) { %><td class="ref"><%= v.reference_range || '' %></td><% } %>
+									<% if (anySiAcross) { %><td class="unit si-start"><%= siValue(v) %></td><% } %>
+									<% if (anySiAcross) { %><td class="unit"><%= hasSi(v) ? (v.si_unit_of_measure || '') : '' %></td><% } %>
+									<% if (anySiAcross) { %><td class="ref"><%= hasSi(v) ? (v.si_reference_range || '') : '' %></td><% } %>
 								</tr>
 							<% }); %>
 						<% } else { %>
 							<tr>
-								<td colspan="<%= 2 + (anyUnitAcross ? 1 : 0) + (anyReferenceAcross ? 1 : 0) %>">
+								<td colspan="<%= flatCols %>">
 									<div style="font-weight:600; color:#1e293b;"><%= it.test_name %></div>
 									<div class="narrative"><%= it.narrative_text || '—' %></div>
 								</td>

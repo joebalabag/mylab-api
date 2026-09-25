@@ -335,6 +335,30 @@ export class LabReportService {
 			(it.values || []).some((v: any) => !!(v.reference_range && String(v.reference_range).trim())),
 		);
 
+		// SI conversion helpers — mirror LabReportPrintable's `hasSi` / `siValue`
+		// so the public HTML view matches the operator-side print exactly.
+		const hasSi = (v: any): boolean => {
+			const f = v?.si_conversion_factor;
+			return f !== null && f !== undefined && f !== '' && !Number.isNaN(Number(f));
+		};
+		const anySiAcross = (report.items || []).some((it: any) =>
+			(it.values || []).some((v: any) => hasSi(v)),
+		);
+		const siValue = (v: any): string => {
+			if (!hasSi(v)) return '';
+			const raw = String(v?.value_text ?? '').trim();
+			const num = Number(raw);
+			if (raw === '' || Number.isNaN(num)) return '';
+			const factor = Number(v.si_conversion_factor);
+			const converted = num * factor;
+			const abs = Math.abs(converted);
+			const decimals = abs >= 100 ? 1 : abs >= 10 ? 2 : abs >= 1 ? 3 : 4;
+			return converted
+				.toFixed(decimals)
+				.replace(/(\.\d*?)0+$/, '$1')
+				.replace(/\.$/, '');
+		};
+
 		// Colored category-band border + fill (8% alpha over the hex).
 		const rawColor = String(report.item_category_color || '#64748b').trim();
 		const hexMatch = /^#([0-9a-f]{6})$/i.exec(rawColor);
@@ -397,6 +421,9 @@ export class LabReportService {
 			isChemistryFlat,
 			anyUnitAcross,
 			anyReferenceAcross,
+			anySiAcross,
+			hasSi,
+			siValue,
 			categoryColor,
 			categoryFill,
 			patientName,
@@ -870,6 +897,9 @@ export class LabReportService {
 						reference_range: ti?.reference_range ?? null,
 						method: ti?.method ?? null,
 						matrix_config: (ti as any)?.matrix_config ?? null,
+						si_conversion_factor: (ti as any)?.si_conversion_factor ?? null,
+						si_unit_of_measure: (ti as any)?.si_unit_of_measure ?? null,
+						si_reference_range: (ti as any)?.si_reference_range ?? null,
 						narrative_text: null,
 						display_order: display_order++,
 						created_by: acting_user.name,
@@ -886,6 +916,9 @@ export class LabReportService {
 							unit_of_measure: ti.unit_of_measure ?? null,
 							reference_range: ti.reference_range ?? null,
 							lookup_values: ti.lookup_values ?? null,
+							si_conversion_factor: (ti as any).si_conversion_factor ?? null,
+							si_unit_of_measure: (ti as any).si_unit_of_measure ?? null,
+							si_reference_range: (ti as any).si_reference_range ?? null,
 							value_text: null,
 							value_numeric: null,
 							flag: null,
@@ -905,6 +938,9 @@ export class LabReportService {
 								unit_of_measure: c.unit_of_measure ?? null,
 								reference_range: c.reference_range ?? null,
 								lookup_values: c.lookup_values ?? null,
+								si_conversion_factor: (c as any).si_conversion_factor ?? null,
+								si_unit_of_measure: (c as any).si_unit_of_measure ?? null,
+								si_reference_range: (c as any).si_reference_range ?? null,
 								value_text: null,
 								value_numeric: null,
 								flag: null,
@@ -1060,20 +1096,23 @@ export class LabReportService {
 			.first('tester_signatory_count');
 		const testerCount = Number(tenantRow?.tester_signatory_count ?? 1);
 
+		// Refresh acting_user.lab_display_name / license_number the same
+		// way createBatch does — the fields on the session snapshot may
+		// be stale if the user updated their profile mid-session. Runs
+		// for both signatory counts because the pathologist fallback
+		// (below) also honors these fields.
+		if (acting_user.uuid && (acting_user.lab_display_name == null || acting_user.license_number == null)) {
+			const u = await LabReport.knex()('users')
+				.where({ uuid: acting_user.uuid })
+				.first('lab_display_name', 'license_number');
+			if (u) {
+				acting_user.lab_display_name = acting_user.lab_display_name ?? u.lab_display_name ?? null;
+				acting_user.license_number   = acting_user.license_number   ?? u.license_number   ?? null;
+			}
+		}
+
 		const testerPatch: Record<string, any> = {};
 		if (testerCount === 1) {
-			// Refresh acting_user.lab_display_name / license_number the same
-			// way createBatch does — the fields on the session snapshot may
-			// be stale if the user updated their profile mid-session.
-			if (acting_user.uuid && (acting_user.lab_display_name == null || acting_user.license_number == null)) {
-				const u = await LabReport.knex()('users')
-					.where({ uuid: acting_user.uuid })
-					.first('lab_display_name', 'license_number');
-				if (u) {
-					acting_user.lab_display_name = acting_user.lab_display_name ?? u.lab_display_name ?? null;
-					acting_user.license_number   = acting_user.license_number   ?? u.license_number   ?? null;
-				}
-			}
 			testerPatch.medtech_uuid    = acting_user.uuid ?? null;
 			testerPatch.medtech_name    = acting_user.lab_display_name || acting_user.name;
 			testerPatch.medtech_license = acting_user.license_number ?? null;
@@ -1129,7 +1168,7 @@ export class LabReportService {
 			if (d) doctorSnapshot = { name: d.name, license: d.license_number ?? null, uuid: d.uuid };
 		}
 
-		const finalName    = doctorSnapshot?.name    ?? payload.pathologist_name ?? acting_user.name;
+		const finalName    = doctorSnapshot?.name    ?? payload.pathologist_name ?? acting_user.lab_display_name ?? acting_user.name;
 		const finalLicense = doctorSnapshot?.license ?? null;
 		const finalUuid    = doctorSnapshot?.uuid    ?? acting_user.uuid ?? null;
 
