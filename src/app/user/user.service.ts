@@ -22,6 +22,8 @@ export class UserService {
 				'name',
 				'email',
 				'role',
+				'license_number',
+				'lab_display_name',
 				'status',
 				'last_logindate',
 				'last_change_password',
