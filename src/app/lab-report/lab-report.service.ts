@@ -42,8 +42,9 @@ export interface LabReportWithMeta extends LabReport {
 	// address columns — printed on the lab report header.
 	patient_address?: string | null;
 	requisition_number?: string | null;
-	// Referring physician, snapshotted from the requisition that owns this
-	// lab report. Printed on the report header.
+	// Referring physician printed on the report header. Sourced from the
+	// requisition; falls back to the parent case's referring_physician when
+	// the requisition-level value is blank.
 	physician?: string | null;
 	patient_case_number?: string | null;
 	item_category_color?: string | null;
@@ -152,7 +153,9 @@ export class LabReportService {
 					), '') AS patient_address`,
 				),
 				'pr.requisition_number as requisition_number',
-				'pr.physician as physician',
+				LabReport.knex().raw(
+					`COALESCE(NULLIF(pr.physician, ''), NULLIF(pc.referring_physician, '')) as physician`,
+				),
 				'pc.case_number as patient_case_number',
 				'ic.color as item_category_color',
 				'ic.print_title as item_category_print_title',
@@ -222,7 +225,9 @@ export class LabReportService {
 					), '') AS patient_address`,
 				),
 				'pr.requisition_number as requisition_number',
-				'pr.physician as physician',
+				LabReport.knex().raw(
+					`COALESCE(NULLIF(pr.physician, ''), NULLIF(pc.referring_physician, '')) as physician`,
+				),
 				'pc.case_number as patient_case_number',
 				'ic.color as item_category_color',
 				'ic.print_title as item_category_print_title',
