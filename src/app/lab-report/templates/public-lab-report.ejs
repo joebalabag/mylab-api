@@ -24,8 +24,7 @@
 	.header .brand .company { font-size: 22px; font-weight: 700; line-height: 1.15; color: #0f172a; }
 	.header .brand .rest { white-space: pre-line; font-size: 12px; color: #475569; margin-top: 2px; }
 	.header .qr { flex-shrink: 0; text-align: center; }
-	.header .qr img { height: 96px; width: 96px; display: block; }
-	.header .qr .caption { margin-top: 2px; font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; }
+	.header .qr img { height: 80px; width: 80px; display: block; }
 
 	.info { font-size: 12px; margin-bottom: 12px; }
 	.info .row { display: flex; align-items: baseline; gap: 16px; padding: 1px 0; }
@@ -115,7 +114,6 @@
 			<% if (qrDataUrl) { %>
 				<div class="qr">
 					<img src="<%= qrDataUrl %>" alt="Scan to view online" />
-					<div class="caption">Scan to view</div>
 				</div>
 			<% } %>
 		</div>
