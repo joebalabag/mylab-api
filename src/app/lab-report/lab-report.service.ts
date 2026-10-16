@@ -31,7 +31,9 @@ import {
 export interface LabReportWithMeta extends LabReport {
 	patient_number?: string | null;
 	patient_first_name?: string | null;
+	patient_middle_name?: string | null;
 	patient_last_name?: string | null;
+	patient_suffix?: string | null;
 	patient_sex?: string | null;
 	patient_birthdate?: Date | string | null;
 	patient_civil_status?: string | null;
@@ -60,6 +62,29 @@ export interface LabReportWithMeta extends LabReport {
 }
 
 const PUBLIC_TOKEN_SECRET = () => process.env.JWT_SECRET || 'super-secret-change-me';
+
+/**
+ * Patient name formatted "Last, First M.I. Suffix" for lab-result preview /
+ * print / email. Mirrors the frontend helper in LabReportPrintable.vue so
+ * both renders agree. Falls back to just the first-name portion when the
+ * last name is missing (no stray leading comma).
+ */
+export function formatPatientNameForReport(
+	first?: string | null,
+	middle?: string | null,
+	last?: string | null,
+	suffix?: string | null,
+): string {
+	const firstTrim = (first || '').trim();
+	const middleInitial = (middle || '').trim().charAt(0).toUpperCase();
+	const suffixTrim = (suffix || '').trim();
+	const lastTrim = (last || '').trim();
+	const firstPart = [firstTrim, middleInitial ? `${middleInitial}.` : '', suffixTrim]
+		.filter(Boolean).join(' ');
+	if (!lastTrim) return firstPart;
+	if (!firstPart) return lastTrim;
+	return `${lastTrim}, ${firstPart}`;
+}
 
 function b64urlEncode(buf: Buffer): string {
 	return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
@@ -137,7 +162,9 @@ export class LabReportService {
 				'lr.*',
 				'p.patient_number as patient_number',
 				'p.first_name as patient_first_name',
+				'p.middle_name as patient_middle_name',
 				'p.last_name as patient_last_name',
+				'p.suffix as patient_suffix',
 				'p.sex as patient_sex',
 				'p.birthdate as patient_birthdate',
 				'p.civil_status as patient_civil_status',
@@ -209,7 +236,9 @@ export class LabReportService {
 				'lr.*',
 				'p.patient_number as patient_number',
 				'p.first_name as patient_first_name',
+				'p.middle_name as patient_middle_name',
 				'p.last_name as patient_last_name',
+				'p.suffix as patient_suffix',
 				'p.sex as patient_sex',
 				'p.birthdate as patient_birthdate',
 				'p.civil_status as patient_civil_status',
@@ -414,7 +443,12 @@ export class LabReportService {
 			return raw.charAt(0).toUpperCase() + raw.slice(1);
 		})();
 
-		const patientName = [report.patient_first_name, report.patient_last_name].filter(Boolean).join(' ');
+		const patientName = formatPatientNameForReport(
+			report.patient_first_name,
+			report.patient_middle_name,
+			report.patient_last_name,
+			report.patient_suffix,
+		);
 
 		const locals = {
 			report,
@@ -943,6 +977,7 @@ export class LabReportService {
 								unit_of_measure: c.unit_of_measure ?? null,
 								reference_range: c.reference_range ?? null,
 								lookup_values: c.lookup_values ?? null,
+								section: (c as any).section ?? null,
 								si_conversion_factor: (c as any).si_conversion_factor ?? null,
 								si_unit_of_measure: (c as any).si_unit_of_measure ?? null,
 								si_reference_range: (c as any).si_reference_range ?? null,
@@ -1296,8 +1331,12 @@ export class LabReportService {
 		}
 
 		const patientName =
-			[report.patient_first_name, report.patient_last_name].filter(Boolean).join(' ').trim() ||
-			'Patient';
+			formatPatientNameForReport(
+				report.patient_first_name,
+				report.patient_middle_name,
+				report.patient_last_name,
+				report.patient_suffix,
+			) || 'Patient';
 		// Actual test-item names printed on the report (e.g. "LDL Cholesterol,
 		// Potassium"). findByUuid already loads items[] in display order —
 		// prefer that over the coarser category title or the createBatch-time
