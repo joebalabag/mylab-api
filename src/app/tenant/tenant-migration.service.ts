@@ -26,6 +26,21 @@ const TRANSACTION_DELETE_ORDER = [
 	'patient_cases',
 ] as const;
 
+// Catalog ("look-up") tables deleted by the look-up delete action.
+// FK-safe order: item_package_items references item_packages + test_items;
+// test_item_components references test_items; test_items references
+// item_categories; item_categories references item_groups. doctors and
+// discounts are intentionally excluded — they often outlive a catalog
+// rebuild. Mirrors scripts/_delete-tenant-catalog.ts.
+const LOOKUP_DELETE_ORDER = [
+	'item_package_items',
+	'item_packages',
+	'test_item_components',
+	'test_items',
+	'item_categories',
+	'item_groups',
+] as const;
+
 // Tables the record-counts endpoint reports on. Transaction tables show
 // what a 'delete transactions' call would remove; `patients` is reported
 // separately for the 'delete patient records' call; catalog tables show
@@ -100,6 +115,18 @@ export class TenantMigrationService {
 	async deleteTransactions(targetTenantUuid: string, password: string, currentUser: any) {
 		await this.authorise(currentUser, password, targetTenantUuid);
 		return this.runTransactionsDelete(targetTenantUuid);
+	}
+
+	async deleteLookupData(targetTenantUuid: string, password: string, currentUser: any) {
+		await this.authorise(currentUser, password, targetTenantUuid);
+		const knex = Tenant.knex();
+		const counts: Record<string, number> = {};
+		await objectionTransaction(knex, async (trx) => {
+			for (const table of LOOKUP_DELETE_ORDER) {
+				counts[table] = await trx(table).where({ tenant_uuid: targetTenantUuid }).delete();
+			}
+		});
+		return counts;
 	}
 
 	async deletePatientRecords(targetTenantUuid: string, password: string, currentUser: any) {

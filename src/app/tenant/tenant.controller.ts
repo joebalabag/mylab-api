@@ -299,6 +299,26 @@ export class TenantController {
 		}
 	}
 
+	@Post('/migration/:uuid/delete-lookup-data')
+	@ApiOperation({
+		summary: 'Tenant Migration - Delete look-up/catalog data (item_package_items, item_packages, test_item_components, test_items, item_categories, item_groups) for a tenant. Keeps doctors and discounts.',
+	})
+	@ApiParam({ name: 'uuid', required: true })
+	@ApiBody({ type: TenantMigrationPasswordDTO })
+	async migrationDeleteLookupData(
+		@Res() res: Response,
+		@Param('uuid') uuid: string,
+		@Body() data: TenantMigrationPasswordDTO,
+		@CurrentUser() user: any,
+	) {
+		try {
+			const counts = await this.migration.deleteLookupData(uuid, data.password, user);
+			return ApiResponseHelper.sendResponse(res, { tenant_uuid: uuid, deleted: counts }, 'Look-up data deleted.');
+		} catch (error: any) {
+			return ApiResponseHelper.sendResponse(res, null, error?.message, error?.status ?? 500);
+		}
+	}
+
 	@Post('/migration/:uuid/delete-patient-records')
 	@ApiOperation({
 		summary: 'Tenant Migration - Delete patient master records AND all of their transactions (lab results, payments, requisitions, patient cases) for a tenant.',
