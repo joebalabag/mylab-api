@@ -261,6 +261,24 @@ export class TenantController {
 	// Super-admin migration actions. Each one re-verifies the acting super
 	// admin's password before touching data, so a hijacked session alone
 	// cannot wipe a tenant.
+	@Get('/migration/:uuid/record-counts')
+	@ApiOperation({
+		summary: 'Tenant Migration - Read-only preview of row counts the migration actions would touch (transactions / patients / catalog). Super-admin only; no password.',
+	})
+	@ApiParam({ name: 'uuid', required: true })
+	async migrationRecordCounts(
+		@Res() res: Response,
+		@Param('uuid') uuid: string,
+		@CurrentUser() user: any,
+	) {
+		try {
+			const counts = await this.migration.recordCounts(uuid, user);
+			return ApiResponseHelper.sendResponse(res, counts);
+		} catch (error: any) {
+			return ApiResponseHelper.sendResponse(res, null, error?.message, error?.status ?? 500);
+		}
+	}
+
 	@Post('/migration/:uuid/delete-transactions')
 	@ApiOperation({
 		summary: 'Tenant Migration - Delete transactions (lab results, payments, requisitions, patient cases) for a tenant. Keeps patient master records.',

@@ -26,6 +26,16 @@ const TRANSACTION_DELETE_ORDER = [
 	'patient_cases',
 ] as const;
 
+// Tables the record-counts endpoint reports on. Transaction tables show
+// what a 'delete transactions' call would remove; `patients` is reported
+// separately for the 'delete patient records' call; catalog tables show
+// what the copy source could offer / what already exists on the target.
+const COUNT_REPORT_TABLES = {
+	transactions: TRANSACTION_DELETE_ORDER,
+	patients: ['patients'] as const,
+	catalog: COPYABLE_CATALOG_TABLES,
+};
+
 @Injectable()
 export class TenantMigrationService {
 	constructor(private readonly authService: AuthService) {}
@@ -35,12 +45,7 @@ export class TenantMigrationService {
 	//   2. caller re-enters their password (defence against hijacked session),
 	//   3. target tenant must exist.
 	private async authorise(currentUser: any, password: string, targetTenantUuid: string) {
-		if (!currentUser || currentUser.type !== 'admin') {
-			throw new ForbiddenException('Admin token required.');
-		}
-		if (String(currentUser.role || '').toLowerCase() !== 'super_admin') {
-			throw new ForbiddenException('Super-admin role required.');
-		}
+		this.requireSuperAdmin(currentUser);
 		const me = await Admin.query().findById(currentUser.uuid);
 		if (!me) throw new UnauthorizedException('Session user not found.');
 		const ok = await this.authService.validatePassword(password, (me as any).passphrase);
@@ -48,6 +53,48 @@ export class TenantMigrationService {
 
 		const tenant = await Tenant.query().findById(targetTenantUuid);
 		if (!tenant) throw new NotFoundException('Target tenant not found.');
+	}
+
+	// Read-only role check (no password) used by the record-counts preview.
+	private requireSuperAdmin(currentUser: any) {
+		if (!currentUser || currentUser.type !== 'admin') {
+			throw new ForbiddenException('Admin token required.');
+		}
+		if (String(currentUser.role || '').toLowerCase() !== 'super_admin') {
+			throw new ForbiddenException('Super-admin role required.');
+		}
+	}
+
+	// Read-only count of every row the migration actions touch, grouped by
+	// section (transactions / patients / catalog). Used by the UI's "Check
+	// records" preview so a super-admin sees exactly what will be removed
+	// or copied before entering their password.
+	async recordCounts(targetTenantUuid: string, currentUser: any) {
+		this.requireSuperAdmin(currentUser);
+		const tenant = await Tenant.query().findById(targetTenantUuid);
+		if (!tenant) throw new NotFoundException('Target tenant not found.');
+
+		const knex = Tenant.knex();
+		const transactions: Record<string, number> = {};
+		for (const table of COUNT_REPORT_TABLES.transactions) {
+			const [{ count }] = await knex(table).where({ tenant_uuid: targetTenantUuid }).count();
+			transactions[table] = Number(count);
+		}
+		const [{ count: patientsCount }] = await knex('patients')
+			.where({ tenant_uuid: targetTenantUuid })
+			.count();
+		const catalog: Record<string, number> = {};
+		for (const table of COUNT_REPORT_TABLES.catalog) {
+			const [{ count }] = await knex(table).where({ tenant_uuid: targetTenantUuid }).count();
+			catalog[table] = Number(count);
+		}
+
+		return {
+			tenant_uuid: targetTenantUuid,
+			transactions,
+			patients: Number(patientsCount),
+			catalog,
+		};
 	}
 
 	async deleteTransactions(targetTenantUuid: string, password: string, currentUser: any) {
