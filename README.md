@@ -337,6 +337,16 @@ proxy, Let's Encrypt HTTPS, firewall, `trust proxy` inside Nest, and
 future-update checklist.
 
 
+## Data migrations
+
+One-off tenant → tenant copies, catalog seeding and similar data scripts
+live under `scripts/` (prefixed `_*.ts`). They are dry-run by default and
+only write when passed `--commit`. See
+**[data-migrations.md](./data-migrations.md)** for the full list, the
+`SRC_TENANT` / `TGT_TENANT` pattern, and the template to follow when
+writing a new script.
+
+
 ## Description
 
   One-liner (tagline)

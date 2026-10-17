@@ -17,6 +17,7 @@ export class LabResultValue extends Model {
 	unit_of_measure?: string | null;
 	reference_range?: string | null;
 	lookup_values?: string | null;
+	section?: string | null;
 
 	si_conversion_factor?: number | string | null;
 	si_unit_of_measure?: string | null;
