@@ -26,6 +26,7 @@ import { DashboardQueryDTO } from '@/common/dto/dashboard-query.dto';
 import { imageFileFilter, makeFieldRoutedStorage, makeUploadStorage, toPublicUrl } from '@/common/helpers/upload.helper';
 
 import { TenantService } from './tenant.service';
+import { TenantMigrationService } from './tenant-migration.service';
 import { encryptSecret } from '@/common/crypto/aes.util';
 import {
 	AlterTenantSubscriptionDTO,
@@ -34,6 +35,7 @@ import {
 	TestSmtpDTO,
 	UpdateTenantDTO,
 } from './dto/tenant.dto';
+import { CopyTenantCatalogDTO, TenantMigrationPasswordDTO } from './dto/tenant-migration.dto';
 
 const LOGO_UPLOAD_OPTS = {
 	storage: makeUploadStorage('tenants/logo'),
@@ -62,7 +64,10 @@ const TENANT_FILE_OPTS = {
 @UseGuards(AuthGuard('jwt'))
 @Controller('tenant')
 export class TenantController {
-	constructor(private readonly service: TenantService) {}
+	constructor(
+		private readonly service: TenantService,
+		private readonly migration: TenantMigrationService,
+	) {}
 
 	@Get('/dashboard')
 	@ApiOperation({ summary: 'Tenant - Dashboard list (filters: date range, status[], keywords, pagination)' })
@@ -250,6 +255,69 @@ export class TenantController {
 			return ApiResponseHelper.sendResponse(res, updated, `Tenant set to ${data.status}.`);
 		} catch (error: any) {
 			return ApiResponseHelper.sendResponse(res, null, error?.message, 500);
+		}
+	}
+
+	// Super-admin migration actions. Each one re-verifies the acting super
+	// admin's password before touching data, so a hijacked session alone
+	// cannot wipe a tenant.
+	@Post('/migration/:uuid/delete-transactions')
+	@ApiOperation({
+		summary: 'Tenant Migration - Delete transactions (lab results, payments, requisitions, patient cases) for a tenant. Keeps patient master records.',
+	})
+	@ApiParam({ name: 'uuid', required: true })
+	@ApiBody({ type: TenantMigrationPasswordDTO })
+	async migrationDeleteTransactions(
+		@Res() res: Response,
+		@Param('uuid') uuid: string,
+		@Body() data: TenantMigrationPasswordDTO,
+		@CurrentUser() user: any,
+	) {
+		try {
+			const counts = await this.migration.deleteTransactions(uuid, data.password, user);
+			return ApiResponseHelper.sendResponse(res, { tenant_uuid: uuid, deleted: counts }, 'Transactions deleted.');
+		} catch (error: any) {
+			return ApiResponseHelper.sendResponse(res, null, error?.message, error?.status ?? 500);
+		}
+	}
+
+	@Post('/migration/:uuid/delete-patient-records')
+	@ApiOperation({
+		summary: 'Tenant Migration - Delete patient master records AND all of their transactions (lab results, payments, requisitions, patient cases) for a tenant.',
+	})
+	@ApiParam({ name: 'uuid', required: true })
+	@ApiBody({ type: TenantMigrationPasswordDTO })
+	async migrationDeletePatientRecords(
+		@Res() res: Response,
+		@Param('uuid') uuid: string,
+		@Body() data: TenantMigrationPasswordDTO,
+		@CurrentUser() user: any,
+	) {
+		try {
+			const counts = await this.migration.deletePatientRecords(uuid, data.password, user);
+			return ApiResponseHelper.sendResponse(res, { tenant_uuid: uuid, deleted: counts }, 'Patient records and transactions deleted.');
+		} catch (error: any) {
+			return ApiResponseHelper.sendResponse(res, null, error?.message, error?.status ?? 500);
+		}
+	}
+
+	@Post('/migration/:uuid/copy-catalog')
+	@ApiOperation({
+		summary: 'Tenant Migration - Copy selected catalog tables from a source tenant into this (target) tenant. Refused with 409 if any selected table already has rows on the target.',
+	})
+	@ApiParam({ name: 'uuid', required: true, description: 'Target tenant UUID.' })
+	@ApiBody({ type: CopyTenantCatalogDTO })
+	async migrationCopyCatalog(
+		@Res() res: Response,
+		@Param('uuid') uuid: string,
+		@Body() data: CopyTenantCatalogDTO,
+		@CurrentUser() user: any,
+	) {
+		try {
+			const result = await this.migration.copyCatalog(uuid, data.password, data.source_tenant_uuid, data.tables, user);
+			return ApiResponseHelper.sendResponse(res, result, 'Catalog copied.');
+		} catch (error: any) {
+			return ApiResponseHelper.sendResponse(res, null, error?.message, error?.status ?? 500);
 		}
 	}
 }
