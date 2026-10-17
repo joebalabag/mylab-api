@@ -1,6 +1,6 @@
 {
 	"name": "laboratory-api",
-	"version": "0.0.1",
+	"version": "1.2.0",
 	"description": "Multi-tenant MyLab backend",
 	"author": "",
 	"private": true,
