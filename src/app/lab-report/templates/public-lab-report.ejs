@@ -343,7 +343,10 @@
 		</div>
 
 		<div class="footer-note">
-			<div>Printed: <%= printedAtFmt %></div>
+			<div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px;">
+				<div>Printed: <%= printedAtFmt %></div>
+				<div style="font-style:italic;">Result accessed via QR code scan</div>
+			</div>
 			<div class="disclaimer">This is a computer-generated report and does not require a signature.</div>
 		</div>
 	</div>

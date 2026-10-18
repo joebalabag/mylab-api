@@ -8,12 +8,13 @@ import {
 	Post,
 	Put,
 	Query,
+	Req,
 	Res,
 	UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 
 import { ApiResponseHelper } from '@/common/helpers/response.helper';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
@@ -69,10 +70,17 @@ export class LabReportController {
 	// Network tab. Returns text/html.
 	@Get('/public/render')
 	@ApiOperation({ summary: 'Lab Report - Server-rendered HTML of the public lab report. Returns a self-contained page instead of JSON.' })
-	async publicRender(@Res() res: Response, @Query('t') token: string) {
+	async publicRender(@Req() req: Request, @Res() res: Response, @Query('t') token: string) {
 		try {
 			if (!token) return res.status(400).type('text/plain').send('Missing token.');
-			const html = await this.service.renderPublicHtml(token);
+			// Derive the API's public origin from the inbound request so the
+			// EJS template can emit absolute URLs for /public/uploads/... — the
+			// public page is served from the frontend origin and the frontend
+			// nginx does not proxy /public/ by default.
+			const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
+			const host = String(req.headers['x-forwarded-host'] || req.get('host') || '');
+			const reqOrigin = host ? `${proto}://${host}` : '';
+			const html = await this.service.renderPublicHtml(token, { reqOrigin });
 			if (!html) return res.status(404).type('text/plain').send('Lab report not found or link is invalid.');
 			return res.type('text/html').send(html);
 		} catch (error: any) {
