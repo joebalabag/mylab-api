@@ -307,14 +307,22 @@ export class LabReportService {
 	 * recipient's Network tab: browsers see only the rendered HTML.
 	 * Returns null on unknown / invalid tokens so the controller can 404.
 	 */
-	async renderPublicHtml(token: string): Promise<string | null> {
+	async renderPublicHtml(token: string, ctx?: { reqOrigin?: string }): Promise<string | null> {
 		const report = await this.findByPublicToken(token);
 		if (!report) return null;
 		const tenant = report.tenant || {};
+		// Frontend origin for the QR URL. Prefers an explicit FRONTEND_ORIGIN
+		// but falls back to APP_URL (the convention used by auth / registration
+		// / subscription services) so one env var feeds every outbound link.
 		const frontendOrigin = (process.env.FRONTEND_ORIGIN
+			|| process.env.APP_URL
 			|| (process.env.NODE_ENV === 'local' ? 'http://localhost:5173' : ''))
 			.replace(/\/+$/, '');
-		const apiOrigin = (process.env.API_ORIGIN || '').replace(/\/+$/, '');
+		// API origin for logo / lab-header image URLs. Prefers API_ORIGIN env
+		// override, otherwise falls back to the inbound request's origin — the
+		// public page lives on the frontend host, so a relative /public/... URL
+		// would 404 unless nginx proxies /public/ (not the default).
+		const apiOrigin = (process.env.API_ORIGIN || ctx?.reqOrigin || '').replace(/\/+$/, '');
 
 		// Public-share URL the QR points at. Same string the operator's Print
 		// Preview encodes — a recipient scanning the printed QR lands here.
@@ -343,14 +351,14 @@ export class LabReportService {
 		}
 		const headerRestLines = restLinesArr.join('\n').trim();
 
-		// Assets served through the API's /public/ mount. When frontend
-		// nginx proxies /public/ back to the API, relative paths work in
-		// production; for cross-origin fetches during dev we prefer absolute.
+		// Assets served through the API's /public/ mount. Stored URLs already
+		// include the "/public/" prefix (see upload.helper#toPublicUrl), so we
+		// just normalise the leading slash and prepend the API origin.
 		const publicAsset = (p: string | undefined | null): string => {
 			if (!p) return '';
-			const clean = String(p).replace(/^\/+/, '');
-			if (apiOrigin) return `${apiOrigin}/public/${clean}`;
-			return `/public/${clean}`;
+			const normalized = String(p).startsWith('/') ? String(p) : `/${p}`;
+			if (apiOrigin) return `${apiOrigin}${normalized}`;
+			return normalized;
 		};
 		const tenantForTemplate = {
 			name:            tenant.display_name || tenant.legal_name || '',
