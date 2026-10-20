@@ -64,6 +64,26 @@ export class AdminController {
 		}
 	}
 
+	@Get('/username-available')
+	@ApiOperation({
+		summary: 'Admin - Check username availability',
+		description:
+			'Lightweight probe used by the super-admin create-admin form. Returns { available: bool } ' +
+			'after a global lookup against the admins table. Mirrors /user/username-available but for admins.',
+	})
+	async usernameAvailable(@Res() res: Response, @Query('username') username: string) {
+		try {
+			const u = String(username || '').trim();
+			if (u.length < 3) {
+				return ApiResponseHelper.sendResponse(res, { available: false, reason: 'too_short' });
+			}
+			const taken = await this.adminService.usernameTaken(u);
+			return ApiResponseHelper.sendResponse(res, { available: !taken });
+		} catch (error: any) {
+			return ApiResponseHelper.sendResponse(res, null, error?.message, 500);
+		}
+	}
+
 	@Post('/create')
 	@ApiOperation({ summary: 'Admin - Create' })
 	@ApiBody({ type: CreateAdminDTO })
