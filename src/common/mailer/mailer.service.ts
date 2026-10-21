@@ -41,6 +41,7 @@ export class MailerService implements OnModuleInit {
 	private transporter?: nodemailer.Transporter;
 	private renderer?: Email;
 	private from = '';
+	private fromName = '';
 	private templatesRoot = '';
 	private baseLayoutPath = '';
 
@@ -66,6 +67,7 @@ export class MailerService implements OnModuleInit {
 		const pass = this.config.get<string>('SMTP_PASSWORD');
 		const secure = String(this.config.get<string>('SMTP_SECURE') || 'false').toLowerCase() === 'true';
 		this.from = this.config.get<string>('SMTP_FROM') || user || 'no-reply@example.com';
+		this.fromName = (this.config.get<string>('MAIL_FROM_NAME') || 'MyLab').trim();
 
 		if (!host || !user || !pass) {
 			this.logger.warn(
@@ -149,8 +151,9 @@ export class MailerService implements OnModuleInit {
 		// Nodemailer's object form `{ name, address }` handles the quoting
 		// and MIME encoding of the display name — safe for tenant names
 		// with commas, quotes, non-ASCII characters, etc.
-		const from = fromName?.trim()
-			? { name: fromName.trim(), address: fromAddress }
+		const displayName = (fromName ?? this.fromName)?.trim();
+		const from = displayName
+			? { name: displayName, address: fromAddress }
 			: fromAddress;
 
 		if (!transporter) {

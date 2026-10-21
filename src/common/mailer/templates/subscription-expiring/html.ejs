@@ -1,0 +1,24 @@
+<p>Hi <%= owner_name %>,</p>
+
+<p>
+	This is a friendly reminder that your <strong><%= store_name %></strong> subscription
+	<% if (plan_name) { %>on the <strong><%= plan_name %></strong> plan <% } %>
+	will expire in <strong><%= days_remaining %> day<%= days_remaining === 1 ? '' : 's' %></strong>
+	— on <strong><%= new Date(subscription_end).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) %></strong>.
+</p>
+
+<p>To avoid any interruption to your lab operations, please renew before the expiry date.</p>
+
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:16px 0;">
+	<tr>
+		<td style="border-radius:6px;background:#2563eb;">
+			<a href="<%= renewal_url %>" style="display:inline-block;padding:10px 20px;color:#ffffff;text-decoration:none;font-weight:600;">
+				Renew subscription
+			</a>
+		</td>
+	</tr>
+</table>
+
+<p style="color:#666666;font-size:12px;margin-top:24px;">
+	If you've already renewed, you can safely ignore this message.
+</p>

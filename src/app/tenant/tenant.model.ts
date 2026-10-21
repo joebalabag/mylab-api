@@ -93,6 +93,7 @@ export class Tenant extends Model {
 	current_subscription_expiry?: Date | null;
 	current_subscription_expiry_warning_days?: number | null;
 	current_subscription_plan_amount!: number;
+	last_expiry_warning_sent_at?: Date | null;
 
 	// Tenant-level dark-launch gate for offline mode. See migration
 	// 20260902000100. Default false — tenant must opt in from Settings.
