@@ -809,8 +809,7 @@ export class TenantSubscriptionPaymentService {
 		const candidates = await Tenant.query()
 			.whereNotNull('current_subscription_expiry')
 			.where('current_subscription_expiry', '>', now)
-			.where('current_subscription_expiry', '<=', maxWindow)
-			.whereNotNull('email_address');
+			.where('current_subscription_expiry', '<=', maxWindow);
 
 		let notified = 0;
 		for (const tenant of candidates) {
@@ -847,7 +846,12 @@ export class TenantSubscriptionPaymentService {
 		if (lastSent && subStart && lastSent >= subStart) return false;
 
 		const to = tenant.email_address;
-		if (!to) return false;
+		if (!to) {
+			this.logger.debug(
+				`Skip expiry warning for tenant ${tenant.uuid} (${tenant.display_name}): no email_address on record.`,
+			);
+			return false;
+		}
 
 		await this.mailer.sendTemplate(to, 'subscription-expiring', {
 			owner_name: tenant.owner_name || tenant.display_name || 'there',
