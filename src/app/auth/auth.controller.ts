@@ -1,9 +1,10 @@
 import { Body, Controller, ForbiddenException, Get, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { ApiResponseHelper } from '@/common/helpers/response.helper';
+import { CustomThrottlerGuard } from '@/common/guards/throttler.guard';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { LoginDTO } from './dto/login.dto';
 import { UserLoginDTO } from './dto/user-login.dto';
@@ -63,7 +64,7 @@ function buildTenantSubscription(tenant: Tenant, plan?: SubscriptionPlan, schedu
 }
 
 @ApiTags('Auth')
-@UseGuards(ThrottlerGuard)
+@UseGuards(CustomThrottlerGuard)
 @Controller('auth')
 export class AuthController {
 	constructor(

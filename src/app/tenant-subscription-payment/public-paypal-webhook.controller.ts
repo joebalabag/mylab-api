@@ -1,9 +1,10 @@
 import { Body, Controller, Headers, Post, Res, UseGuards } from '@nestjs/common';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { Throttle } from '@nestjs/throttler';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 
 import { ApiResponseHelper } from '@/common/helpers/response.helper';
+import { CustomThrottlerGuard } from '@/common/guards/throttler.guard';
 import { TenantSubscriptionPaymentService } from './tenant-subscription-payment.service';
 
 /**
@@ -22,7 +23,7 @@ import { TenantSubscriptionPaymentService } from './tenant-subscription-payment.
  * which is what we want.
  */
 @ApiTags('Public - PayPal Webhook')
-@UseGuards(ThrottlerGuard)
+@UseGuards(CustomThrottlerGuard)
 @Controller('public/paypal')
 export class PublicPaypalWebhookController {
 	constructor(private readonly service: TenantSubscriptionPaymentService) {}

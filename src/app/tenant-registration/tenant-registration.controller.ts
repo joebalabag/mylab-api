@@ -1,9 +1,10 @@
 import { Body, Controller, Logger, Post, Res, UseGuards } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { Throttle } from '@nestjs/throttler';
 import { Response } from 'express';
 
 import { ApiResponseHelper } from '@/common/helpers/response.helper';
+import { CustomThrottlerGuard } from '@/common/guards/throttler.guard';
 import { TenantRegistrationService } from './tenant-registration.service';
 import {
 	RegisterTenantDTO,
@@ -12,7 +13,7 @@ import {
 } from './dto/tenant-registration.dto';
 
 @ApiTags('Public - Tenant Registration')
-@UseGuards(ThrottlerGuard)
+@UseGuards(CustomThrottlerGuard)
 @Controller('public/tenant')
 export class TenantRegistrationController {
 	private readonly logger = new Logger(TenantRegistrationController.name);
