@@ -1,9 +1,10 @@
 import { Controller, Get, Res, UseGuards } from '@nestjs/common';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { Throttle } from '@nestjs/throttler';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 
 import { ApiResponseHelper } from '@/common/helpers/response.helper';
+import { CustomThrottlerGuard } from '@/common/guards/throttler.guard';
 import { SubscriptionPlanService } from './subscription-plan.service';
 
 /**
@@ -12,7 +13,7 @@ import { SubscriptionPlanService } from './subscription-plan.service';
  * that controller doesn't accidentally leak onto public routes.
  */
 @ApiTags('Public - Subscription Plan')
-@UseGuards(ThrottlerGuard)
+@UseGuards(CustomThrottlerGuard)
 @Controller('public/subscription-plan')
 export class PublicSubscriptionPlanController {
 	constructor(private readonly service: SubscriptionPlanService) {}
