@@ -11,6 +11,7 @@ import {
 	IsString,
 	IsUrl,
 	IsUUID,
+	Matches,
 	MaxLength,
 	Min,
 	ValidateIf,
@@ -476,6 +477,12 @@ export class UpdateTenantDTO {
 	})
 	@IsOptional()
 	lab_header_image?: any;
+
+	@ApiProperty({ required: false, description: 'Brand primary color as a hex (#rrggbb). Null to reset to the shipped default.' })
+	@Transform(emptyToUndef)
+	@IsOptional()
+	@Matches(/^#?[0-9A-Fa-f]{6}$/, { message: 'theme_primary_color must be a 6-digit hex like "#dc2626".' })
+	theme_primary_color?: string | null;
 
 	@ApiProperty({ required: false, enum: [1, 2], description: 'See CreateTenantDTO.tester_signatory_count.' })
 	// Multipart form fields arrive as strings, so @Type(() => Number)
