@@ -19,6 +19,7 @@ export class CreateUserDTO {
 	tenant_uuid?: string;
 
 	@ApiProperty({ required: true, example: 'jdoe' })
+	@Transform(({ value }) => String(value ?? '').trim().toLowerCase())
 	@IsNotEmpty()
 	@IsString()
 	@MinLength(3)

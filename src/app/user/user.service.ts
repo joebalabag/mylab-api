@@ -63,7 +63,8 @@ export class UserService {
 	}
 
 	async usernameTaken(username: string, excludeUuid?: string): Promise<boolean> {
-		const q = User.query().where({ username });
+		const u = String(username ?? '').trim().toLowerCase();
+		const q = User.query().whereRaw('LOWER(username) = ?', [u]);
 		if (excludeUuid) q.andWhereNot('uuid', excludeUuid);
 		const row = await q.first();
 		return !!row;

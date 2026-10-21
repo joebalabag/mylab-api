@@ -1,9 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import { IsEmail, IsIn, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
 import { Match } from '@/common/validators/match.validator';
 
 export class CreateAdminDTO {
 	@ApiProperty({ required: true, example: 'jdoe' })
+	@Transform(({ value }) => String(value ?? '').trim().toLowerCase())
 	@IsNotEmpty()
 	@IsString()
 	@MinLength(3)
