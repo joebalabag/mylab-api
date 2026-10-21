@@ -793,4 +793,80 @@ export class TenantSubscriptionPaymentService {
 		return promoted;
 	}
 
+	/**
+	 * Sweep: email the owner of every tenant whose active subscription will
+	 * expire within its warning window (per-tenant override → plan setting →
+	 * 7 days). Idempotent per subscription cycle — last_expiry_warning_sent_at
+	 * is compared against current_subscription_start so a renewal naturally
+	 * re-arms the warning for the next cycle.
+	 */
+	async notifyNearExpirySubscriptions(): Promise<number> {
+		const now = new Date();
+		// 60-day ceiling keeps the index scan bounded — the largest plan
+		// warning window in practice is far below this.
+		const maxWindow = new Date(now.getTime() + 60 * 86_400_000);
+
+		const candidates = await Tenant.query()
+			.whereNotNull('current_subscription_expiry')
+			.where('current_subscription_expiry', '>', now)
+			.where('current_subscription_expiry', '<=', maxWindow);
+
+		let notified = 0;
+		for (const tenant of candidates) {
+			try {
+				if (await this.sendExpiryWarningForTenant(tenant, now)) notified++;
+			} catch (err: any) {
+				this.logger.error(
+					`Expiry warning for tenant ${tenant.uuid} failed: ${err?.message}`,
+					err?.stack,
+				);
+			}
+		}
+		return notified;
+	}
+
+	private async sendExpiryWarningForTenant(tenant: Tenant, now: Date): Promise<boolean> {
+		const expiry = tenant.current_subscription_expiry ? new Date(tenant.current_subscription_expiry) : null;
+		if (!expiry || expiry <= now) return false;
+
+		const plan = tenant.current_subscription_plan_uuid
+			? await SubscriptionPlan.query().findById(tenant.current_subscription_plan_uuid)
+			: null;
+
+		const warningDays = Number(
+			tenant.current_subscription_expiry_warning_days
+				?? plan?.days_warning_for_near_expiry
+				?? 7,
+		);
+		const daysRemaining = Math.ceil((expiry.getTime() - now.getTime()) / 86_400_000);
+		if (daysRemaining > warningDays) return false;
+
+		const lastSent = tenant.last_expiry_warning_sent_at ? new Date(tenant.last_expiry_warning_sent_at) : null;
+		const subStart = tenant.current_subscription_start ? new Date(tenant.current_subscription_start) : null;
+		if (lastSent && subStart && lastSent >= subStart) return false;
+
+		const to = tenant.email_address;
+		if (!to) {
+			this.logger.debug(
+				`Skip expiry warning for tenant ${tenant.uuid} (${tenant.display_name}): no email_address on record.`,
+			);
+			return false;
+		}
+
+		await this.mailer.sendTemplate(to, 'subscription-expiring', {
+			owner_name: tenant.owner_name || tenant.display_name || 'there',
+			store_name: tenant.display_name,
+			plan_name: plan?.name ?? null,
+			subscription_end: expiry.toISOString(),
+			days_remaining: daysRemaining,
+			renewal_url: `${this.appUrl()}/subscription`,
+		});
+
+		await Tenant.query().findById(tenant.uuid).patch({
+			last_expiry_warning_sent_at: new Date(),
+		});
+
+		return true;
+	}
+
 }
