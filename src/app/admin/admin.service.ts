@@ -36,7 +36,8 @@ export class AdminService {
 	}
 
 	async usernameTaken(username: string, excludeUuid?: string): Promise<boolean> {
-		const q = Admin.query().where({ username });
+		const u = String(username ?? '').trim().toLowerCase();
+		const q = Admin.query().whereRaw('LOWER(username) = ?', [u]);
 		if (excludeUuid) q.andWhereNot('uuid', excludeUuid);
 		const row = await q.first();
 		return !!row;
