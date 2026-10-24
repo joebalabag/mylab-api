@@ -25,26 +25,32 @@ export class PublicRenderThrottleFilter implements ExceptionFilter {
 
 		// Only wrap the HTML endpoint; let the JSON endpoint fall through to
 		// Nest's default handler so API clients still get { statusCode, message }.
-		const isHtml = req.path.endsWith('/lab-report/public/render')
-			|| req.originalUrl?.startsWith('/lab-report/public/render');
-
+		// Global prefix is `/api`, so the full path is `/api/lab-report/public/render`.
+		const url = req.originalUrl || req.url || req.path || '';
+		const isHtml = url.includes('/lab-report/public/render');
 		if (!isHtml) throw exception;
 
+		let body: string;
+		let contentType = 'text/html; charset=utf-8';
 		try {
 			const templatePath = path.join(__dirname, 'templates', 'public-lab-report-rate-limit.ejs');
-			const html = await ejs.renderFile(templatePath, {}, { async: true });
-			res.status(429)
-				.setHeader('Retry-After', '60')
-				.type('text/html')
-				.send(html);
+			body = await ejs.renderFile(templatePath, {}, { async: true });
 		} catch (err: any) {
 			// Rendering the friendly page itself failed — fall back to a plain
 			// 429 so the recipient at least sees *something*.
 			this.logger.warn(`Failed to render throttle page: ${err?.message}`);
-			res.status(429)
-				.setHeader('Retry-After', '60')
-				.type('text/plain')
-				.send('Too many requests. Please wait a minute and try again.');
+			body = 'Too many requests. Please wait a minute and try again.';
+			contentType = 'text/plain; charset=utf-8';
 		}
+
+		// Write directly via Node's raw ServerResponse so Nest / morgan / anything
+		// else chaining on top of Express can't downgrade the Content-Type back
+		// to text/plain. Express's `res.type()` was leaving the header unset in
+		// the exception-filter path, so recipients saw the HTML as literal text.
+		res.statusCode = 429;
+		res.setHeader('Content-Type', contentType);
+		res.setHeader('Retry-After', '60');
+		res.setHeader('Cache-Control', 'no-store');
+		res.end(body);
 	}
 }
