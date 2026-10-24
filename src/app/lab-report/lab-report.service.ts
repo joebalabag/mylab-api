@@ -501,6 +501,48 @@ export class LabReportService {
 				for (const v of (it.values || [])) cells[String(v.component_code)] = v;
 				return { rows, cols, cells };
 			},
+			// Mirror of LabReportPrintable.isTwoColumnItem — Microscopy / Fecalysis
+			// (incl. Clinical-Microscopy, which contains Urinalysis) print as two
+			// columns to use page width better.
+			isTwoColumnItem: (it: any): boolean => {
+				const catName = String(report.item_category_name || '').toLowerCase();
+				const catCode = String(report.item_category_code || '').toUpperCase();
+				if (catName === 'microscopy' || catName === 'fecalysis') return true;
+				if (catCode === 'MICRO' || catCode === 'CLM' || catCode === 'FEC') return true;
+				return String(it?.test_code || '').toUpperCase() === 'CM001';
+			},
+			// Split section groups into [left, right] balanced by row count, keeping
+			// each section intact on one side. Mirrors LabReportPrintable.splitSectionsForTwoColumns.
+			splitSectionsForTwoColumns: (values: any[]): [Array<{ section: string; values: any[] }>, Array<{ section: string; values: any[] }>] => {
+				const groups = (() => {
+					if (!Array.isArray(values) || !values.length) return [] as Array<{ section: string; values: any[] }>;
+					const map = new Map<string, any[]>();
+					const order: string[] = [];
+					for (const v of values) {
+						const key = v.section || '';
+						if (!map.has(key)) { map.set(key, []); order.push(key); }
+						map.get(key)!.push(v);
+					}
+					return order.map((k) => ({ section: k, values: map.get(k)! }));
+				})();
+				if (!groups.length) return [[], []];
+				const rowsIn = (g: { section: string; values: any[] }) => (g.section ? 1 : 0) + g.values.length;
+				const total = groups.reduce((acc, g) => acc + rowsIn(g), 0);
+				const target = total / 2;
+				const left: Array<{ section: string; values: any[] }> = [];
+				const right: Array<{ section: string; values: any[] }> = [];
+				let running = 0;
+				for (const g of groups) {
+					const r = rowsIn(g);
+					if (running + r / 2 <= target) {
+						left.push(g); running += r;
+					} else {
+						right.push(g);
+					}
+				}
+				if (right.length === 0 && left.length > 1) right.push(left.pop()!);
+				return [left, right];
+			},
 		};
 
 		const templatePath = path.join(__dirname, 'templates', 'public-lab-report.ejs');
