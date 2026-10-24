@@ -10,7 +10,6 @@ import {
 	Query,
 	Req,
 	Res,
-	UseFilters,
 	UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -25,7 +24,6 @@ import { CustomThrottlerGuard } from '@/common/guards/throttler.guard';
 import { extractClientIp, extractUserAgent } from '../presence/request-meta';
 
 import { LabReportService } from './lab-report.service';
-import { PublicRenderThrottleFilter } from './public-render-throttle.filter';
 import {
 	CreateLabReportBatchDTO,
 	EmailLabReportResultDTO,
@@ -52,10 +50,7 @@ function assertOwns(current: any, existing: LabReport) {
 @ApiTags('Lab Report')
 // Public (no-auth) endpoints — rate-limited per IP via the named
 // `public_lab_view` limiter (configured in app.module.ts). Protects both
-// the JSON view and the HTML render from token-scraping bursts. The
-// filter below swaps the default 429 JSON for a friendly HTML page when
-// the HTML route is throttled (recipient is a non-technical patient).
-@UseFilters(PublicRenderThrottleFilter)
+// the JSON view and the HTML render from token-scraping bursts.
 @UseGuards(CustomThrottlerGuard)
 @Throttle({ public_lab_view: { ttl: 60_000, limit: 60 } })
 @Controller('lab-report')
