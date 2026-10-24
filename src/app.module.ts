@@ -47,8 +47,12 @@ import { OfflineSyncModule } from './app/offline-sync/offline-sync.module';
 		ScheduleModule.forRoot(),
 		ThrottlerModule.forRoot([
 			//{ name: 'default', ttl: 60_000, limit: 100 },
-			// Named limiter applied per-route with @Throttle({ login: {...} }).
+			// Named limiters applied per-route with @Throttle({ <name>: {...} }).
 			{ name: 'login', ttl: 60_000, limit: 5 },
+			// Public QR-code / token-based lab-report viewer. 60/min per IP leaves
+			// legitimate recipients plenty of refresh/print room while blocking
+			// token-scraping bursts.
+			{ name: 'public_lab_view', ttl: 60_000, limit: 60 },
 		]),
 		KnexModule,
 		HealthModule,

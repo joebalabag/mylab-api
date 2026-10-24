@@ -14,10 +14,14 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 
 import { ApiResponseHelper } from '@/common/helpers/response.helper';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { CustomThrottlerGuard } from '@/common/guards/throttler.guard';
+
+import { extractClientIp, extractUserAgent } from '../presence/request-meta';
 
 import { LabReportService } from './lab-report.service';
 import {
@@ -44,6 +48,11 @@ function assertOwns(current: any, existing: LabReport) {
 }
 
 @ApiTags('Lab Report')
+// Public (no-auth) endpoints — rate-limited per IP via the named
+// `public_lab_view` limiter (configured in app.module.ts). Protects both
+// the JSON view and the HTML render from token-scraping bursts.
+@UseGuards(CustomThrottlerGuard)
+@Throttle({ public_lab_view: { ttl: 60_000, limit: 60 } })
 @Controller('lab-report')
 export class LabReportController {
 	constructor(private readonly service: LabReportService) {}
@@ -80,7 +89,11 @@ export class LabReportController {
 			const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
 			const host = String(req.headers['x-forwarded-host'] || req.get('host') || '');
 			const reqOrigin = host ? `${proto}://${host}` : '';
-			const html = await this.service.renderPublicHtml(token, { reqOrigin });
+			const html = await this.service.renderPublicHtml(token, {
+				reqOrigin,
+				clientIp: extractClientIp(req),
+				userAgent: extractUserAgent(req),
+			});
 			if (!html) return res.status(404).type('text/plain').send('Lab report not found or link is invalid.');
 			return res.type('text/html').send(html);
 		} catch (error: any) {
@@ -124,6 +137,23 @@ export class LabReportAuthedController {
 			if (!row) return ApiResponseHelper.sendNotFound(res, 'Lab report not found.');
 			assertOwns(current, row);
 			return ApiResponseHelper.sendResponse(res, row);
+		} catch (error: any) {
+			return ApiResponseHelper.sendResponse(res, null, error?.message, error?.status ?? 500);
+		}
+	}
+
+	// History of public (QR-code) accesses for a single report. Powers the
+	// "QR access history" panel in the operator-side Print Preview modal.
+	@Get('/view/:uuid/access-logs')
+	@ApiOperation({ summary: 'Lab Report - List public (QR scan) access events for a report.' })
+	@ApiParam({ name: 'uuid', required: true })
+	async accessLogs(@Res() res: Response, @Param('uuid') uuid: string, @CurrentUser() current: any) {
+		try {
+			const row = await this.service.findByUuid(uuid);
+			if (!row) return ApiResponseHelper.sendNotFound(res, 'Lab report not found.');
+			assertOwns(current, row);
+			const out = await this.service.listAccessLogs(uuid, row.tenant_uuid);
+			return ApiResponseHelper.sendResponse(res, out);
 		} catch (error: any) {
 			return ApiResponseHelper.sendResponse(res, null, error?.message, error?.status ?? 500);
 		}

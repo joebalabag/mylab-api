@@ -21,6 +21,7 @@ import { applyPagination, PagedResult } from '@/common/helpers/pagination.helper
 
 import { LabReport, LabReportStatus } from './lab-report.model';
 import { LabReportItem } from './lab-report-item.model';
+import { LabReportAccessLog } from './lab-report-access-log.model';
 import { LabResultValue } from './lab-result-value.model';
 import {
 	CreateLabReportBatchDTO,
@@ -307,9 +308,26 @@ export class LabReportService {
 	 * recipient's Network tab: browsers see only the rendered HTML.
 	 * Returns null on unknown / invalid tokens so the controller can 404.
 	 */
-	async renderPublicHtml(token: string, ctx?: { reqOrigin?: string }): Promise<string | null> {
+	async renderPublicHtml(
+		token: string,
+		ctx?: { reqOrigin?: string; clientIp?: string; userAgent?: string },
+	): Promise<string | null> {
 		const report = await this.findByPublicToken(token);
 		if (!report) return null;
+
+		// Record the view before any rendering work. Fire-and-forget: a DB
+		// blip here must never break the recipient's view, so a .warn is
+		// enough. Same discipline as the QRCode.toDataURL try/catch below.
+		try {
+			await LabReportAccessLog.query().insert({
+				lab_report_uuid: report.uuid,
+				tenant_uuid: report.tenant_uuid,
+				client_ip: ctx?.clientIp ?? null,
+				user_agent: ctx?.userAgent ?? null,
+			});
+		} catch (err: any) {
+			this.logger.warn(`Failed to record public access for ${report.uuid}: ${err?.message}`);
+		}
 		const tenant = report.tenant || {};
 		// Frontend origin for the QR URL. Prefers an explicit FRONTEND_ORIGIN
 		// but falls back to APP_URL (the convention used by auth / registration
@@ -522,6 +540,35 @@ export class LabReportService {
 			.where({ uuid: report.tenant_uuid })
 			.first()) as any;
 		return { ...report, tenant };
+	}
+
+	/**
+	 * Operator-side history of public (QR) accesses for a single report.
+	 * Returns the most recent 50 rows plus a count + last-accessed summary
+	 * for the Print Preview "QR access history" panel. Tenant-scoped at the
+	 * query level so a leaked uuid from one tenant can't surface another
+	 * tenant's log — belt + suspenders with the controller's assertOwns.
+	 */
+	async listAccessLogs(uuid: string, tenant_uuid: string): Promise<{
+		count: number;
+		last_accessed_at: Date | null;
+		logs: Array<{ uuid: string; accessed_at: Date; client_ip: string | null; user_agent: string | null }>;
+	}> {
+		const base = LabReportAccessLog.query()
+			.where('lab_report_uuid', uuid)
+			.andWhere('tenant_uuid', tenant_uuid);
+
+		const countResult = (await base.clone().count({ count: 'uuid' })) as any;
+		const count = Number(countResult?.[0]?.count ?? 0);
+
+		const logs = await base
+			.clone()
+			.select('uuid', 'accessed_at', 'client_ip', 'user_agent')
+			.orderBy('accessed_at', 'desc')
+			.limit(50);
+
+		const last_accessed_at = logs.length ? logs[0].accessed_at : null;
+		return { count, last_accessed_at, logs: logs as any };
 	}
 
 	/**
