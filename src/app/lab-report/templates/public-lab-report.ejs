@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<!--
+	Fixed viewport width so a phone shows the full desktop-sized report
+	zoomed-out to fit (same proportions as print / desktop). Keeps the
+	table columns from reflowing / wrapping on narrow screens.
+-->
+<meta name="viewport" content="width=820" />
 <meta name="robots" content="noindex, nofollow" />
 <title>Lab Report <%= report.lab_number || '' %></title>
 <style>
@@ -56,6 +61,17 @@
 
 	.matrix td, .matrix th { padding: 2px 8px; }
 	.matrix th.corner { border-bottom: 1px solid #e2e8f0; }
+
+	/* Two-column layout for Microscopy / Fecalysis / Clinical-Microscopy
+	   (e.g. Urinalysis) items — mirrors LabReportPrintable.isTwoColumnItem. */
+	.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 0; align-items: start; }
+	.two-col table { table-layout: fixed; border-collapse: collapse; line-height: 16px; }
+	.two-col th, .two-col td { padding: 0; vertical-align: middle; }
+	.two-col tr { height: 18px; }
+	.two-col .col-analyte { width: 50%; }
+	.two-col .col-result  { width: 25%; }
+	.two-col .col-unit    { width: 25%; }
+	.two-col tbody tr.section-head td { padding: 0; line-height: 18px; }
 
 	.narrative { white-space: pre-wrap; font-size: 12px; line-height: 1.4; }
 
@@ -248,6 +264,43 @@
 					<% if (it.result_type === 'single' || it.result_type === 'panel') { %>
 						<% var itemAnyUnit = (it.values || []).some(function(v){ return !!(v.unit_of_measure && String(v.unit_of_measure).trim()); }); %>
 						<% var itemAnyRef  = (it.values || []).some(function(v){ return !!(v.reference_range && String(v.reference_range).trim()); }); %>
+						<% if (isTwoColumnItem(it)) { %>
+							<% var itemCols = splitSectionsForTwoColumns(it.values); %>
+							<% var colSpan = 2 + (itemAnyUnit ? 1 : 0) + (itemAnyRef ? 1 : 0); %>
+							<div class="two-col">
+								<% itemCols.forEach(function(colGroups) { %>
+									<table style="width:100%;">
+										<thead>
+											<tr style="height:18px;">
+												<th class="col-analyte">Analyte</th>
+												<th class="col-result">Result</th>
+												<% if (itemAnyUnit) { %><th class="col-unit unit">Unit</th><% } %>
+												<% if (itemAnyRef)  { %><th class="ref" style="white-space:nowrap;">Reference</th><% } %>
+											</tr>
+										</thead>
+										<tbody>
+											<% colGroups.forEach(function(grp) { %>
+												<% if (grp.section) { %>
+													<tr class="section-head">
+														<td colspan="<%= colSpan %>" style="white-space:nowrap; overflow:hidden;">
+															<%= grp.section %>
+														</td>
+													</tr>
+												<% } %>
+												<% grp.values.forEach(function(v) { %>
+													<tr>
+														<td <% if (grp.section) { %>class="pl-6"<% } %>><%= v.component_name %></td>
+														<td><%= v.value_text || '' %></td>
+														<% if (itemAnyUnit) { %><td class="unit"><%= v.unit_of_measure || '' %></td><% } %>
+														<% if (itemAnyRef)  { %><td class="ref"><%= v.reference_range || '' %></td><% } %>
+													</tr>
+												<% }); %>
+											<% }); %>
+										</tbody>
+									</table>
+								<% }); %>
+							</div>
+						<% } else { %>
 						<table>
 							<thead>
 								<tr>
@@ -277,6 +330,7 @@
 								<% }); %>
 							</tbody>
 						</table>
+						<% } %>
 					<% } else if (it.result_type === 'matrix') { %>
 						<% var grid = buildMatrixGrid(it); %>
 						<table class="matrix">
@@ -316,13 +370,13 @@
 					<div class="cell">
 						<div class="line"></div>
 						<div class="name"><%= report.status === 'finalized' ? (report.medtech_name || '') : '' %></div>
-						<div class="lic"><% if (report.status === 'finalized' && report.medtech_license) { %>Lic. No. <%= report.medtech_license %><% } else { %>&nbsp;<% } %></div>
+						<div class="lic"><% if (report.status === 'finalized' && report.medtech_license) { %>License No. <%= report.medtech_license %><% } else { %>&nbsp;<% } %></div>
 						<div class="role"><%= report.item_group_tester_role || 'Medical Technologist' %></div>
 					</div>
 					<div class="cell">
 						<div class="line"></div>
 						<div class="name"><%= report.status === 'finalized' ? (report.medtech2_name || '') : '' %></div>
-						<div class="lic"><% if (report.status === 'finalized' && report.medtech2_license) { %>Lic. No. <%= report.medtech2_license %><% } else { %>&nbsp;<% } %></div>
+						<div class="lic"><% if (report.status === 'finalized' && report.medtech2_license) { %>License No. <%= report.medtech2_license %><% } else { %>&nbsp;<% } %></div>
 						<div class="role"><%= report.item_group_tester_role || 'Medical Technologist' %></div>
 					</div>
 				</div>
@@ -330,14 +384,14 @@
 				<div class="cell">
 					<div class="line"></div>
 					<div class="name"><%= report.status === 'finalized' ? (report.medtech_name || '') : '' %></div>
-					<div class="lic"><% if (report.status === 'finalized' && report.medtech_license) { %>Lic. No. <%= report.medtech_license %><% } else { %>&nbsp;<% } %></div>
+					<div class="lic"><% if (report.status === 'finalized' && report.medtech_license) { %>License No. <%= report.medtech_license %><% } else { %>&nbsp;<% } %></div>
 					<div class="role"><%= report.item_group_tester_role || 'Medical Technologist' %></div>
 				</div>
 			<% } %>
 			<div class="cell">
 				<div class="line"></div>
 				<div class="name"><%= report.status === 'finalized' ? (report.pathologist_name || '') : '' %></div>
-				<div class="lic"><% if (report.status === 'finalized' && report.pathologist_license) { %>Lic. No. <%= report.pathologist_license %><% } else { %>&nbsp;<% } %></div>
+				<div class="lic"><% if (report.status === 'finalized' && report.pathologist_license) { %>License No. <%= report.pathologist_license %><% } else { %>&nbsp;<% } %></div>
 				<div class="role">Pathologist</div>
 			</div>
 		</div>
