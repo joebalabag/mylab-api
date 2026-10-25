@@ -159,7 +159,7 @@ export class TenantSubscriptionPaymentService {
 				submitted_at: new Date().toISOString(),
 				receipt_attached: hasAttachment,
 			},
-			{ attachments },
+			{ attachments, fromName: 'MyLab' },
 		);
 	}
 
@@ -426,17 +426,22 @@ export class TenantSubscriptionPaymentService {
 			);
 			return;
 		}
-		await this.mailer.sendTemplate(to, 'payment-approved', {
-			owner_name: tenant.owner_name || tenant.display_name || 'there',
-			store_name: tenant.display_name,
-			plan_name: plan?.name || payment.subscription_plan_name,
-			amount_paid: this.fmtAmount(payment.amount_paid ?? null, tenant.currency),
-			activation_mode,
-			subscription_start: start.toISOString(),
-			subscription_end: end.toISOString(),
-			approved_by_name,
-			login_url: `${this.appUrl()}/login`,
-		});
+		await this.mailer.sendTemplate(
+			to,
+			'payment-approved',
+			{
+				owner_name: tenant.owner_name || tenant.display_name || 'there',
+				store_name: tenant.display_name,
+				plan_name: plan?.name || payment.subscription_plan_name,
+				amount_paid: this.fmtAmount(payment.amount_paid ?? null, tenant.currency),
+				activation_mode,
+				subscription_start: start.toISOString(),
+				subscription_end: end.toISOString(),
+				approved_by_name,
+				login_url: `${this.appUrl()}/login`,
+			},
+			{ fromName: 'MyLab' },
+		);
 	}
 
 	private async notifyPaymentRejected(
@@ -447,17 +452,22 @@ export class TenantSubscriptionPaymentService {
 	): Promise<void> {
 		const to = tenant.email_address;
 		if (!to) return; // reject() already recorded a warning in this case
-		await this.mailer.sendTemplate(to, 'payment-rejected', {
-			owner_name: tenant.owner_name || tenant.display_name || 'there',
-			store_name: tenant.display_name,
-			plan_name: payment.subscription_plan_name,
-			amount_paid: this.fmtAmount(payment.amount_paid ?? null, tenant.currency),
-			payment_reference_number: payment.payment_reference_number || null,
-			rejection_reason,
-			rejected_by_name,
-			rejected_at: new Date().toISOString(),
-			login_url: `${this.appUrl()}/login`,
-		});
+		await this.mailer.sendTemplate(
+			to,
+			'payment-rejected',
+			{
+				owner_name: tenant.owner_name || tenant.display_name || 'there',
+				store_name: tenant.display_name,
+				plan_name: payment.subscription_plan_name,
+				amount_paid: this.fmtAmount(payment.amount_paid ?? null, tenant.currency),
+				payment_reference_number: payment.payment_reference_number || null,
+				rejection_reason,
+				rejected_by_name,
+				rejected_at: new Date().toISOString(),
+				login_url: `${this.appUrl()}/login`,
+			},
+			{ fromName: 'MyLab' },
+		);
 	}
 
 	/** Mark any earlier still-active history rows for this tenant as 'expired'. */
@@ -853,14 +863,19 @@ export class TenantSubscriptionPaymentService {
 			return false;
 		}
 
-		await this.mailer.sendTemplate(to, 'subscription-expiring', {
-			owner_name: tenant.owner_name || tenant.display_name || 'there',
-			store_name: tenant.display_name,
-			plan_name: plan?.name ?? null,
-			subscription_end: expiry.toISOString(),
-			days_remaining: daysRemaining,
-			renewal_url: `${this.appUrl()}/subscription`,
-		});
+		await this.mailer.sendTemplate(
+			to,
+			'subscription-expiring',
+			{
+				owner_name: tenant.owner_name || tenant.display_name || 'there',
+				store_name: tenant.display_name,
+				plan_name: plan?.name ?? null,
+				subscription_end: expiry.toISOString(),
+				days_remaining: daysRemaining,
+				renewal_url: `${this.appUrl()}/subscription`,
+			},
+			{ fromName: 'MyLab' },
+		);
 
 		await Tenant.query().findById(tenant.uuid).patch({
 			last_expiry_warning_sent_at: new Date(),

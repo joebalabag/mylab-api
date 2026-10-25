@@ -28,11 +28,16 @@ export class MailTestController {
 			const message = data.message ?? 'Hello from mylab-api. If you can read this, SMTP is working.';
 			const sent_at = new Date();
 
-			await this.mailer.sendTemplate(data.to, 'test', {
-				subject,
-				message,
-				sent_at: sent_at.toISOString(),
-			});
+			await this.mailer.sendTemplate(
+				data.to,
+				'test',
+				{
+					subject,
+					message,
+					sent_at: sent_at.toISOString(),
+				},
+				{ fromName: 'MyLab' },
+			);
 
 			return ApiResponseHelper.sendResponse(
 				res,
