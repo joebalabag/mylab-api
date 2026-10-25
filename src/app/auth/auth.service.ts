@@ -237,11 +237,16 @@ export class AuthService {
 
 	private async sendPasswordResetEmail(user: User, token: string, expires_at: Date): Promise<void> {
 		if (!user.email) return; // Guarded upstream but keep the check for safety.
-		await this.mailer.sendTemplate(user.email, 'password-reset', {
-			name: user.name,
-			username: user.username,
-			reset_url: `${this.appUrl()}/reset-password?token=${token}`,
-			expires_at: formatReadableDateTime(expires_at),
-		});
+		await this.mailer.sendTemplate(
+			user.email,
+			'password-reset',
+			{
+				name: user.name,
+				username: user.username,
+				reset_url: `${this.appUrl()}/reset-password?token=${token}`,
+				expires_at: formatReadableDateTime(expires_at),
+			},
+			{ fromName: 'MyLab' },
+		);
 	}
 }

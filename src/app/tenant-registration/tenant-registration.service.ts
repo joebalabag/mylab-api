@@ -291,11 +291,16 @@ export class TenantRegistrationService {
 		token: string,
 		expires_at: Date,
 	): Promise<void> {
-		await this.mailer.sendTemplate(to, 'verification', {
-			name,
-			verify_url: `${this.appUrl()}/verify?token=${token}`,
-			expires_at: formatReadableDateTime(expires_at),
-		});
+		await this.mailer.sendTemplate(
+			to,
+			'verification',
+			{
+				name,
+				verify_url: `${this.appUrl()}/verify?token=${token}`,
+				expires_at: formatReadableDateTime(expires_at),
+			},
+			{ fromName: 'MyLab' },
+		);
 	}
 
 	private async sendWelcomeEmail(
@@ -305,17 +310,22 @@ export class TenantRegistrationService {
 		password: string,
 		tenant: Tenant,
 	): Promise<void> {
-		await this.mailer.sendTemplate(to, 'welcome', {
-			name,
-			store_name: tenant.display_name,
-			store_code: tenant.store_code,
-			username,
-			password,
-			trial_expiry: tenant.current_subscription_expiry
-				? formatReadableDateTime(new Date(tenant.current_subscription_expiry), tenant.timezone)
-				: null,
-			login_url: `${this.appUrl()}/login`,
-		});
+		await this.mailer.sendTemplate(
+			to,
+			'welcome',
+			{
+				name,
+				store_name: tenant.display_name,
+				store_code: tenant.store_code,
+				username,
+				password,
+				trial_expiry: tenant.current_subscription_expiry
+					? formatReadableDateTime(new Date(tenant.current_subscription_expiry), tenant.timezone)
+					: null,
+				login_url: `${this.appUrl()}/login`,
+			},
+			{ fromName: 'MyLab' },
+		);
 	}
 }
 
