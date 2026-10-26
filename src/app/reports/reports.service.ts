@@ -418,6 +418,185 @@ export class ReportsService {
 		}));
 	}
 
+	// ─────────────────────────── ARRANGEMENTS ────────────────────────────
+	// Non-cash arrangement payments (A/R, Insurance, Paid Outside, Charity,
+	// Other) with per-row settlement status. Charity is auto-resolved on
+	// creation so it's treated as "settled" regardless of
+	// arrangement_resolved_at. Voided payments are excluded.
+	//
+	// Filters:
+	//   payment_method — narrow to a single arrangement type (optional)
+	//   settlement     — 'settled' | 'outstanding' (optional, both when omitted)
+	//
+	// Returns:
+	//   rows[]        — one row per payment with billed_to / reference /
+	//                   resolution trail / days_outstanding (NULL once settled)
+	//   by_method[]   — per-method totals (billed, settled, outstanding, counts)
+	//   aging         — outstanding-only bucket totals (0-30, 31-60, 61-90, 90+)
+	//   totals        — grand totals across all returned rows
+	async arrangements(
+		tenant_uuid: string,
+		date_from?: string,
+		date_to?: string,
+		payment_method?: string,
+		settlement?: string,
+	) {
+		const knex = Payment.knex();
+		const to = this.eod(date_to);
+
+		const arrangementMethods = ARRANGEMENT_PAYMENT_METHODS as unknown as string[];
+		const selfResolving = SELF_RESOLVING_ARRANGEMENTS as unknown as string[];
+
+		// A row counts as "settled" when either (a) it uses a self-resolving
+		// method (charity) or (b) arrangement_resolved_at is set. We filter on
+		// those columns directly rather than on a derived boolean, so the
+		// SQL stays plain and avoids nesting knex.raw inside whereRaw.
+		const applySettlement = (qb: any) => {
+			if (settlement === 'settled') {
+				qb.where((inner: any) => {
+					inner.whereIn('p.payment_method', selfResolving)
+						.orWhereNotNull('p.arrangement_resolved_at');
+				});
+			} else if (settlement === 'outstanding') {
+				qb.whereNotIn('p.payment_method', selfResolving)
+					.whereNull('p.arrangement_resolved_at');
+			}
+		};
+
+		const base = knex('payments as p')
+			.leftJoin('patient_cases as pc', 'pc.uuid', 'p.patient_case_uuid')
+			.leftJoin('patients as pa', 'pa.uuid', 'p.patient_uuid')
+			.where('p.tenant_uuid', tenant_uuid)
+			.where('p.status', 'completed')
+			.whereIn('p.payment_method', arrangementMethods)
+			.modify(qb => {
+				if (date_from) qb.where('p.payment_date', '>=', date_from);
+				if (to) qb.where('p.payment_date', '<=', to);
+				if (payment_method) qb.where('p.payment_method', payment_method);
+				applySettlement(qb);
+			});
+
+		const selfResolvingLiteral = selfResolving.map(m => `'${m}'`).join(',');
+		const isSettledSql = `(p.payment_method IN (${selfResolvingLiteral}) OR p.arrangement_resolved_at IS NOT NULL)`;
+
+		const rows = await base.clone()
+			.select(
+				'p.uuid', 'p.payment_number', 'p.payment_date', 'p.payment_method',
+				'p.subtotal', 'p.discount_amount', 'p.total',
+				'p.billed_to', 'p.reference', 'p.notes',
+				'p.arrangement_resolved_at', 'p.resolved_method',
+				'p.resolved_channel', 'p.resolved_reference', 'p.resolved_notes',
+				'p.resolved_by', 'p.created_by',
+				'pc.case_number as patient_case_number',
+				'pa.patient_number', 'pa.first_name as patient_first_name',
+				'pa.middle_name as patient_middle_name', 'pa.last_name as patient_last_name',
+			)
+			.select(knex.raw(`${isSettledSql} as is_settled`))
+			.select(knex.raw(`
+				CASE
+					WHEN ${isSettledSql} THEN NULL
+					ELSE FLOOR(EXTRACT(EPOCH FROM (NOW() - p.payment_date)) / 86400)::int
+				END as days_outstanding
+			`))
+			.orderBy('p.payment_date', 'desc')
+			.limit(1000);
+
+		// Per-method breakdown — totals the whole filtered slice (not the
+		// 1000-row cap), so numbers reconcile with the exposed aging bucket.
+		const byMethodRows: any[] = await base.clone()
+			.select('p.payment_method')
+			.select(knex.raw(`COALESCE(SUM(p.total), 0) as billed`))
+			.select(knex.raw(`COUNT(*) as count_total`))
+			.select(knex.raw(`COALESCE(SUM(CASE WHEN ${isSettledSql} THEN p.total ELSE 0 END), 0) as settled`))
+			.select(knex.raw(`COUNT(*) FILTER (WHERE ${isSettledSql}) as count_settled`))
+			.select(knex.raw(`COALESCE(SUM(CASE WHEN NOT ${isSettledSql} THEN p.total ELSE 0 END), 0) as outstanding`))
+			.select(knex.raw(`COUNT(*) FILTER (WHERE NOT ${isSettledSql}) as count_outstanding`))
+			.groupBy('p.payment_method')
+			.orderBy('p.payment_method');
+
+		// Per-payer breakdown — grouped on billed_to (trimmed; NULL/blank →
+		// 'Unspecified'). Same filter slice as by_method, so totals reconcile.
+		const billedToExpr = `COALESCE(NULLIF(TRIM(p.billed_to), ''), 'Unspecified')`;
+		const byBilledToRows: any[] = await base.clone()
+			.select(knex.raw(`${billedToExpr} as billed_to`))
+			.select(knex.raw(`COALESCE(SUM(p.total), 0) as billed`))
+			.select(knex.raw(`COUNT(*) as count_total`))
+			.select(knex.raw(`COALESCE(SUM(CASE WHEN ${isSettledSql} THEN p.total ELSE 0 END), 0) as settled`))
+			.select(knex.raw(`COUNT(*) FILTER (WHERE ${isSettledSql}) as count_settled`))
+			.select(knex.raw(`COALESCE(SUM(CASE WHEN NOT ${isSettledSql} THEN p.total ELSE 0 END), 0) as outstanding`))
+			.select(knex.raw(`COUNT(*) FILTER (WHERE NOT ${isSettledSql}) as count_outstanding`))
+			.groupByRaw(billedToExpr)
+			.orderByRaw(`SUM(CASE WHEN NOT ${isSettledSql} THEN p.total ELSE 0 END) DESC, SUM(p.total) DESC`);
+
+		// Aging — only outstanding, non-self-resolving rows. Buckets are from
+		// payment_date (= billing date) to today.
+		const agingRows: any[] = await base.clone()
+			.whereNotIn('p.payment_method', selfResolving)
+			.whereNull('p.arrangement_resolved_at')
+			.select(knex.raw(`
+				CASE
+					WHEN NOW()::date - p.payment_date::date <= 30 THEN '0-30'
+					WHEN NOW()::date - p.payment_date::date <= 60 THEN '31-60'
+					WHEN NOW()::date - p.payment_date::date <= 90 THEN '61-90'
+					ELSE '90+'
+				END as bucket
+			`))
+			.select(knex.raw(`COALESCE(SUM(p.total), 0) as total`))
+			.count({ count: '*' })
+			.groupByRaw(`1`);
+
+		const aging: Record<string, { total: number; count: number }> = {
+			'0-30':  { total: 0, count: 0 },
+			'31-60': { total: 0, count: 0 },
+			'61-90': { total: 0, count: 0 },
+			'90+':   { total: 0, count: 0 },
+		};
+		for (const a of agingRows) aging[a.bucket] = { total: Number(a.total ?? 0), count: Number(a.count ?? 0) };
+
+		const totals = byMethodRows.reduce(
+			(acc, r) => {
+				acc.billed      += Number(r.billed ?? 0);
+				acc.settled     += Number(r.settled ?? 0);
+				acc.outstanding += Number(r.outstanding ?? 0);
+				acc.count       += Number(r.count_total ?? 0);
+				return acc;
+			},
+			{ billed: 0, settled: 0, outstanding: 0, count: 0 },
+		);
+
+		return {
+			rows: rows.map((r: any) => ({
+				...r,
+				subtotal:        Number(r.subtotal ?? 0),
+				discount_amount: Number(r.discount_amount ?? 0),
+				total:           Number(r.total ?? 0),
+				is_settled:      Boolean(r.is_settled),
+				days_outstanding: r.days_outstanding != null ? Number(r.days_outstanding) : null,
+			})),
+			by_method: byMethodRows.map((r: any) => ({
+				payment_method:    r.payment_method,
+				billed:            Number(r.billed ?? 0),
+				settled:           Number(r.settled ?? 0),
+				outstanding:       Number(r.outstanding ?? 0),
+				count_total:       Number(r.count_total ?? 0),
+				count_settled:     Number(r.count_settled ?? 0),
+				count_outstanding: Number(r.count_outstanding ?? 0),
+			})),
+			by_billed_to: byBilledToRows.map((r: any) => ({
+				billed_to:         r.billed_to,
+				billed:            Number(r.billed ?? 0),
+				settled:           Number(r.settled ?? 0),
+				outstanding:       Number(r.outstanding ?? 0),
+				count_total:       Number(r.count_total ?? 0),
+				count_settled:     Number(r.count_settled ?? 0),
+				count_outstanding: Number(r.count_outstanding ?? 0),
+			})),
+			aging,
+			totals,
+			count: rows.length,
+		};
+	}
+
 	// ─────────────────────────── EXPENSE REPORT ──────────────────────────
 	// Full expense breakdown for the range. Returns row list + per-category
 	// totals + grand total. Optional `category` narrows to a single bucket.

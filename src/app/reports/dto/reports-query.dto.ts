@@ -40,6 +40,18 @@ export class ReportsQueryDTO {
 	@IsString()
 	category?: string;
 
+	@ApiProperty({ required: false, description: 'Filter arrangements to a single payment_method (accounts_receivable | insurance | paid_outside | charity | other). Omit for all arrangements.' })
+	@Transform(emptyToUndef)
+	@IsOptional()
+	@IsString()
+	payment_method?: string;
+
+	@ApiProperty({ required: false, description: 'Filter arrangements by settlement status: settled | outstanding. Omit for both.' })
+	@Transform(emptyToUndef)
+	@IsOptional()
+	@IsString()
+	settlement?: string;
+
 	@ApiProperty({ required: false, default: 50 })
 	@Transform(emptyToUndef)
 	@IsOptional()
