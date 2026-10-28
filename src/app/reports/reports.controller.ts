@@ -115,6 +115,15 @@ export class ReportsController {
 		} catch (e: any) { return ApiResponseHelper.sendResponse(res, null, e?.message, e?.status ?? 500); }
 	}
 
+	@Get('/arrangements')
+	@ApiOperation({ summary: 'Reports - Non-cash arrangement payments (A/R, Insurance, Paid Outside, Charity, Other) with settlement status + aging.' })
+	async arrangements(@Res() res: Response, @Query() q: ReportsQueryDTO, @CurrentUser() current: any) {
+		try {
+			const t = scope(current, q.tenant_uuid);
+			return ApiResponseHelper.sendResponse(res, await this.service.arrangements(t, q.date_from, q.date_to, q.payment_method, q.settlement));
+		} catch (e: any) { return ApiResponseHelper.sendResponse(res, null, e?.message, e?.status ?? 500); }
+	}
+
 	@Get('/payment-summary')
 	@ApiOperation({ summary: 'Reports - Payment method × status breakdown.' })
 	async paymentSummary(@Res() res: Response, @Query() q: ReportsQueryDTO, @CurrentUser() current: any) {

@@ -358,6 +358,14 @@ const ROWS: Row[] = [
 		sub_navigation: 'test analytics',
 		remarks: 'Test analytics — trend charts, most-requested tests, turnaround stats.',
 	},
+	{
+		navigation_id: 412,
+		catalog_id: 13,
+		catalog: 'reports',
+		main_navigation: 'reports',
+		sub_navigation: 'arrangements',
+		remarks: 'Arrangements — A/R, Insurance, Paid Outside, and Charity payments with settlement status + aging.',
+	},
 ];
 
 export async function seed(knex: Knex): Promise<void> {
