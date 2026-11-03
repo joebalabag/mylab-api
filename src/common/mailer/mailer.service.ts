@@ -1,9 +1,11 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as nodemailer from 'nodemailer';
 import Email = require('email-templates');
+
+import { hasDeliverableMx } from './mail-address.util';
 
 export interface MailAttachment {
 	filename?: string;
@@ -33,6 +35,10 @@ export interface MailSendOptions {
 	// `<fromName> <address>` in their inbox. Nodemailer safely handles the
 	// quoting when we pass name + address as an object.
 	fromName?: string;
+	// When true (default) a missing/invalid MX record raises an exception
+	// so interactive callers surface the error. Set false for batch sends
+	// (crons) that should skip-and-continue instead of aborting.
+	failOnUndeliverable?: boolean;
 }
 
 @Injectable()
@@ -97,6 +103,7 @@ export class MailerService implements OnModuleInit {
 		options: MailSendOptions = {},
 	): Promise<void> {
 		if (!this.renderer) throw new Error('Mailer renderer not initialized.');
+		if (!(await this.ensureDeliverable(to, options))) return;
 		const [subject, bodyHtml] = await Promise.all([
 			this.renderer.render(`${templateName}/subject`, locals),
 			this.renderer.render(`${templateName}/html`, locals),
@@ -111,7 +118,26 @@ export class MailerService implements OnModuleInit {
 	 * Prefer sendTemplate() for anything new.
 	 */
 	async send(to: string, subject: string, html: string, text?: string, options: MailSendOptions = {}): Promise<void> {
+		if (!(await this.ensureDeliverable(to, options))) return;
 		await this.rawSend(to, subject, html, text, options.attachments, options.smtp, options.fromName);
+	}
+
+	/**
+	 * Pre-send guard: reject obvious typos / parked domains / null-MX
+	 * domains before we hand the message to SMTP. Returns true when the
+	 * address passes and the caller should proceed with the send.
+	 * Returns false only in skip-mode (failOnUndeliverable=false); the
+	 * default mode throws BadRequestException so controllers surface the
+	 * failure to the user.
+	 */
+	private async ensureDeliverable(to: string, options: MailSendOptions): Promise<boolean> {
+		const failOnUndeliverable = options.failOnUndeliverable ?? true;
+		if (await hasDeliverableMx(to)) return true;
+		if (failOnUndeliverable) {
+			throw new BadRequestException(`Email address "${to}" is not deliverable (invalid or no MX record).`);
+		}
+		this.logger.warn(`Skipping send to ${to} — no deliverable MX record.`);
+		return false;
 	}
 
 	private wrapInBaseLayout(subject: string, body: string): string {
