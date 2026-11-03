@@ -1,4 +1,4 @@
-import { Model } from 'objection';
+import { AuditedModel } from '../audit-log/audited.model';
 
 export const CASE_TYPES = ['OPD', 'IPD', 'ER'] as const;
 export type CaseType = (typeof CASE_TYPES)[number];
@@ -6,9 +6,10 @@ export type CaseType = (typeof CASE_TYPES)[number];
 export const CASE_STATUSES = ['open', 'closed', 'cancelled'] as const;
 export type CaseStatus = (typeof CASE_STATUSES)[number];
 
-export class PatientCase extends Model {
+export class PatientCase extends AuditedModel {
 	static tableName = 'patient_cases';
 	static idColumn = 'uuid';
+	static auditConfig = { entityType: 'patient_case', labelField: 'case_number' };
 
 	uuid!: string;
 	tenant_uuid!: string;

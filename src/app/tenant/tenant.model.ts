@@ -1,8 +1,16 @@
-import { Model, Pojo } from 'objection';
+import { Pojo } from 'objection';
+import { AuditedModel } from '../audit-log/audited.model';
 
-export class Tenant extends Model {
+export class Tenant extends AuditedModel {
 	static tableName = 'tenants';
 	static idColumn = 'uuid';
+	static auditConfig = {
+		entityType: 'tenant',
+		labelField: 'display_name',
+		// Tenant's own uuid is the tenant scope — log edits against the tenant they affect.
+		tenantField: 'uuid',
+		redactFields: ['smtp_password_enc'],
+	};
 
 	// Strip the encrypted SMTP password from every serialized response —
 	// the ciphertext is only useful server-side. Emit a boolean flag so the

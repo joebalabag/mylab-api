@@ -1,4 +1,4 @@
-import { Model } from 'objection';
+import { AuditedModel } from '../audit-log/audited.model';
 
 export const RESULT_TYPES = ['single', 'panel', 'narrative', 'culture', 'matrix'] as const;
 export type ResultType = (typeof RESULT_TYPES)[number];
@@ -10,9 +10,10 @@ export interface MatrixConfig {
 	cols: string[];
 }
 
-export class TestItem extends Model {
+export class TestItem extends AuditedModel {
 	static tableName = 'test_items';
 	static idColumn = 'uuid';
+	static auditConfig = { entityType: 'test_item', labelField: 'code' };
 
 	uuid!: string;
 	tenant_uuid!: string;

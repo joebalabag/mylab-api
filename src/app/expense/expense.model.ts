@@ -1,10 +1,11 @@
-import { Model } from 'objection';
+import { AuditedModel } from '../audit-log/audited.model';
 
 export type ExpenseStatus = 'active' | 'void';
 
-export class Expense extends Model {
+export class Expense extends AuditedModel {
 	static tableName = 'expenses';
 	static idColumn = 'uuid';
+	static auditConfig = { entityType: 'expense', labelField: 'description' };
 
 	uuid!: string;
 	tenant_uuid!: string;

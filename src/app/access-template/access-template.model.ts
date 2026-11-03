@@ -1,8 +1,13 @@
-import { Model } from 'objection';
+import { AuditedModel } from '../audit-log/audited.model';
 
-export class AccessTemplate extends Model {
+export class AccessTemplate extends AuditedModel {
 	static tableName = 'access_templates';
 	static idColumn = 'uuid';
+	static auditConfig = {
+		entityType: 'access_template',
+		labelField: 'main_navigation',
+		tenantField: null as string | null,
+	};
 
 	uuid!: string;
 	navigation_id!: number;

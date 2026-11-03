@@ -1,4 +1,4 @@
-import { Model } from 'objection';
+import { AuditedModel } from '../audit-log/audited.model';
 
 export const PAYMENT_METHODS = [
 	'cash', 'ewallet', 'bank_transfer', 'insurance',
@@ -30,9 +30,10 @@ export type ResolutionMethod = (typeof RESOLUTION_METHODS)[number];
 export const PAYMENT_STATUSES = ['completed', 'voided'] as const;
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 
-export class Payment extends Model {
+export class Payment extends AuditedModel {
 	static tableName = 'payments';
 	static idColumn = 'uuid';
+	static auditConfig = { entityType: 'payment', labelField: 'payment_number' };
 
 	uuid!: string;
 	tenant_uuid!: string;
