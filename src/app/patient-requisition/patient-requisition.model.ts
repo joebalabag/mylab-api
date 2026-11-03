@@ -1,13 +1,14 @@
-import { Model } from 'objection';
+import { AuditedModel } from '../audit-log/audited.model';
 
 // Full lifecycle including the cashier states added by migration
 // 20260804001600. The DB check constraint mirrors this set.
 export const REQUISITION_STATUSES = ['draft', 'finalized', 'partially_paid', 'paid', 'cancelled'] as const;
 export type RequisitionStatus = (typeof REQUISITION_STATUSES)[number];
 
-export class PatientRequisition extends Model {
+export class PatientRequisition extends AuditedModel {
 	static tableName = 'patient_requisitions';
 	static idColumn = 'uuid';
+	static auditConfig = { entityType: 'patient_requisition', labelField: 'requisition_number' };
 
 	uuid!: string;
 	tenant_uuid!: string;

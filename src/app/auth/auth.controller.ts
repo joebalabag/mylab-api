@@ -6,6 +6,8 @@ import { Request, Response } from 'express';
 import { ApiResponseHelper } from '@/common/helpers/response.helper';
 import { CustomThrottlerGuard } from '@/common/guards/throttler.guard';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { AuditRequest, AuditRequestInfo } from '@/common/decorators/audit-request.decorator';
+import { recordAuditEvent } from '@/app/audit-log/audit-log.service';
 import { LoginDTO } from './dto/login.dto';
 import { UserLoginDTO } from './dto/user-login.dto';
 import { VerifyManagerDTO } from './dto/verify-manager.dto';
@@ -76,10 +78,16 @@ export class AuthController {
 	@Throttle({ login: { limit: 5, ttl: 60_000 } })
 	@ApiOperation({ summary: 'Admin - Login (global super admin). Rate-limited to 5 attempts per minute per IP.' })
 	@ApiBody({ type: LoginDTO })
-	async adminLogin(@Res() res: Response, @Body() data: LoginDTO) {
+	async adminLogin(@Res() res: Response, @Body() data: LoginDTO, @AuditRequest() reqInfo: AuditRequestInfo) {
 		try {
 			const validation = await this.authService.validateAdminLogin(data.username, data.password);
 			if (!validation.isAllowLogin || !validation.admin) {
+				recordAuditEvent({
+					actor: { actor_type: 'anonymous', actor_uuid: null, actor_label: data.username || null, tenant_uuid: null },
+					request: reqInfo,
+					action: 'login_failed',
+					summary: `Failed admin login attempt for "${data.username}": ${validation.message}`,
+				});
 				return ApiResponseHelper.sendResponse(res, null, validation.message, 401);
 			}
 
@@ -87,6 +95,13 @@ export class AuthController {
 			await Admin.query().patch({ last_logindate: new Date() }).where({ uuid: admin.uuid });
 
 			const { access_token } = this.authService.signAdminToken(admin);
+
+			recordAuditEvent({
+				actor: { actor_type: 'admin', actor_uuid: admin.uuid, actor_label: admin.name || admin.username, tenant_uuid: null },
+				request: reqInfo,
+				action: 'login',
+				summary: `Admin "${admin.username}" signed in`,
+			});
 
 			return ApiResponseHelper.sendResponse(
 				res,
@@ -153,10 +168,17 @@ export class AuthController {
 	@Throttle({ login: { limit: 5, ttl: 60_000 } })
 	@ApiOperation({ summary: 'User - Login (tenant-scoped, requires tenant_code). Rate-limited to 5 attempts per minute per IP.' })
 	@ApiBody({ type: UserLoginDTO })
-	async userLogin(@Res() res: Response, @Body() data: UserLoginDTO) {
+	async userLogin(@Res() res: Response, @Body() data: UserLoginDTO, @AuditRequest() reqInfo: AuditRequestInfo) {
 		try {
 			const validation = await this.authService.validateUserLogin(data.username, data.password);
 			if (!validation.isAllowLogin || !validation.user) {
+				recordAuditEvent({
+					tenant_uuid: validation.tenant?.uuid ?? null,
+					actor: { actor_type: 'anonymous', actor_uuid: null, actor_label: data.username || null, tenant_uuid: validation.tenant?.uuid ?? null },
+					request: reqInfo,
+					action: 'login_failed',
+					summary: `Failed user login attempt for "${data.username}": ${validation.message}`,
+				});
 				return ApiResponseHelper.sendResponse(res, null, validation.message, 401);
 			}
 
@@ -168,6 +190,14 @@ export class AuthController {
 			]);
 
 			const { access_token } = this.authService.signUserToken(user);
+
+			recordAuditEvent({
+				tenant_uuid: user.tenant_uuid,
+				actor: { actor_type: 'user', actor_uuid: user.uuid, actor_label: user.name || user.username, tenant_uuid: user.tenant_uuid },
+				request: reqInfo,
+				action: 'login',
+				summary: `User "${user.username}" signed in`,
+			});
 
 			// Enrich with current + scheduled subscription state. The lazy hook in
 			// validateUserLogin already promoted any due scheduled row, so `tenant`
@@ -236,13 +266,19 @@ export class AuthController {
 			'Auth - Start a password reset by username. Always returns 200 whether or not the account exists (no enumeration). Rate-limited to 5 attempts per minute per IP.',
 	})
 	@ApiBody({ type: ForgotPasswordDTO })
-	async forgotPassword(@Req() req: Request, @Res() res: Response, @Body() data: ForgotPasswordDTO) {
+	async forgotPassword(@Req() req: Request, @Res() res: Response, @Body() data: ForgotPasswordDTO, @AuditRequest() reqInfo: AuditRequestInfo) {
 		try {
 			const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
 				|| req.socket?.remoteAddress
 				|| null;
 			const ua = (req.headers['user-agent'] as string) || null;
 			await this.authService.requestPasswordReset(data.username, ip, ua);
+			recordAuditEvent({
+				actor: { actor_type: 'anonymous', actor_uuid: null, actor_label: data.username || null, tenant_uuid: null },
+				request: reqInfo,
+				action: 'password_reset_request',
+				summary: `Password reset requested for "${data.username}"`,
+			});
 			return ApiResponseHelper.sendResponse(
 				res,
 				{ ok: true },
@@ -282,9 +318,15 @@ export class AuthController {
 			'Auth - Set a new password using a reset token. On success, the token is stamped used and the user\'s password is updated. Rate-limited to 5 attempts per minute per IP.',
 	})
 	@ApiBody({ type: ResetPasswordDTO })
-	async resetPassword(@Res() res: Response, @Body() data: ResetPasswordDTO) {
+	async resetPassword(@Res() res: Response, @Body() data: ResetPasswordDTO, @AuditRequest() reqInfo: AuditRequestInfo) {
 		try {
 			const result = await this.authService.consumePasswordResetToken(data.token, data.new_password);
+			recordAuditEvent({
+				actor: { actor_type: 'anonymous', actor_uuid: null, actor_label: result.username, tenant_uuid: null },
+				request: reqInfo,
+				action: 'password_reset_complete',
+				summary: `Password reset completed for "${result.username}"`,
+			});
 			return ApiResponseHelper.sendResponse(res, result, 'Password updated. You can sign in with the new password now.');
 		} catch (error: any) {
 			return ApiResponseHelper.sendResponse(res, null, error?.message || 'Failed to reset password.', error?.status ?? 400);

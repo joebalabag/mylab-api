@@ -1,10 +1,11 @@
-import { Model } from 'objection';
+import { AuditedModel } from '../audit-log/audited.model';
 
 export type DiscountType = 'percent' | 'fix' | 'open_amount';
 
-export class Discount extends Model {
+export class Discount extends AuditedModel {
 	static tableName = 'discounts';
 	static idColumn = 'uuid';
+	static auditConfig = { entityType: 'discount', labelField: 'code' };
 
 	uuid!: string;
 	tenant_uuid!: string;

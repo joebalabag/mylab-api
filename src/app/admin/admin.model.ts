@@ -1,8 +1,14 @@
-import { Model } from 'objection';
+import { AuditedModel } from '../audit-log/audited.model';
 
-export class Admin extends Model {
+export class Admin extends AuditedModel {
 	static tableName = 'admins';
 	static idColumn = 'uuid';
+	static auditConfig = {
+		entityType: 'admin',
+		labelField: 'username',
+		tenantField: null as string | null,
+		redactFields: ['passphrase', 'keycode'],
+	};
 
 	uuid!: string;
 	username!: string;

@@ -1,10 +1,11 @@
-import { Model } from 'objection';
+import { AuditedModel } from '../audit-log/audited.model';
 
 export type PatientSex = 'M' | 'F';
 
-export class Patient extends Model {
+export class Patient extends AuditedModel {
 	static tableName = 'patients';
 	static idColumn = 'uuid';
+	static auditConfig = { entityType: 'patient', labelField: 'patient_number' };
 
 	uuid!: string;
 	tenant_uuid!: string;

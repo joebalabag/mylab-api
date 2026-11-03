@@ -1,11 +1,12 @@
-import { Model } from 'objection';
+import { AuditedModel } from '../audit-log/audited.model';
 
 export const LAB_REPORT_STATUSES = ['draft', 'finalized', 'voided'] as const;
 export type LabReportStatus = (typeof LAB_REPORT_STATUSES)[number];
 
-export class LabReport extends Model {
+export class LabReport extends AuditedModel {
 	static tableName = 'lab_reports';
 	static idColumn = 'uuid';
+	static auditConfig = { entityType: 'lab_report', labelField: 'lab_number' };
 
 	uuid!: string;
 	tenant_uuid!: string;

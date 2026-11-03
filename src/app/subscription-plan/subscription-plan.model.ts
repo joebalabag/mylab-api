@@ -1,13 +1,18 @@
-import { Model } from 'objection';
+import { AuditedModel } from '../audit-log/audited.model';
 
 // Keep in sync with the DTO validator and the frontend module list.
 // 'kds' bundles KDS POS + Kitchen Display — they turn on/off together.
 export const PLAN_MODULE_KEYS = ['order_pos', 'terminal_pos', 'kds'] as const;
 export type PlanModuleKey = (typeof PLAN_MODULE_KEYS)[number];
 
-export class SubscriptionPlan extends Model {
+export class SubscriptionPlan extends AuditedModel {
 	static tableName = 'subscription_plans';
 	static idColumn = 'uuid';
+	static auditConfig = {
+		entityType: 'subscription_plan',
+		labelField: 'code',
+		tenantField: null as string | null,
+	};
 
 	static jsonAttributes = ['allowed_modules'];
 

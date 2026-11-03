@@ -1,8 +1,9 @@
-import { Model } from 'objection';
+import { AuditedModel } from '../audit-log/audited.model';
 
-export class ItemCategory extends Model {
+export class ItemCategory extends AuditedModel {
 	static tableName = 'item_categories';
 	static idColumn = 'uuid';
+	static auditConfig = { entityType: 'item_category', labelField: 'code' };
 
 	uuid!: string;
 	tenant_uuid!: string;

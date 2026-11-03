@@ -366,6 +366,14 @@ const ROWS: Row[] = [
 		sub_navigation: 'arrangements',
 		remarks: 'Arrangements — A/R, Insurance, Paid Outside, and Charity payments with settlement status + aging.',
 	},
+	{
+		navigation_id: 500,
+		catalog_id: 1,
+		catalog: 'administrative',
+		main_navigation: 'audit log',
+		sub_navigation: 'all-access',
+		remarks: 'View the tenant-scoped audit log — who did what, when, including auth events and record changes.',
+	},
 ];
 
 export async function seed(knex: Knex): Promise<void> {

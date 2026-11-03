@@ -37,6 +37,8 @@ import { AnalyticsModule } from './app/analytics/analytics.module';
 import { ReportsModule } from './app/reports/reports.module';
 import { SetupReadinessModule } from './app/setup-readiness/setup-readiness.module';
 import { OfflineSyncModule } from './app/offline-sync/offline-sync.module';
+import { AuditLogModule } from './app/audit-log/audit-log.module';
+import { AuditContextInterceptor } from './app/audit-log/audit-context.interceptor';
 
 @Module({
 	imports: [
@@ -86,6 +88,7 @@ import { OfflineSyncModule } from './app/offline-sync/offline-sync.module';
 		ReportsModule,
 		SetupReadinessModule,
 		OfflineSyncModule,
+		AuditLogModule,
 	],
 	providers: [
 		{
@@ -95,6 +98,14 @@ import { OfflineSyncModule } from './app/offline-sync/offline-sync.module';
 		{
 			provide: APP_INTERCEPTOR,
 			useClass: PresenceInterceptor,
+		},
+		// AuditContextInterceptor must register BEFORE any audited mutation
+		// so the AsyncLocalStorage frame covers the entire handler chain.
+		// Nest executes global interceptors in the order they're listed here
+		// (outer → inner), so this stays last to wrap the innermost scope.
+		{
+			provide: APP_INTERCEPTOR,
+			useClass: AuditContextInterceptor,
 		},
 	],
 })
