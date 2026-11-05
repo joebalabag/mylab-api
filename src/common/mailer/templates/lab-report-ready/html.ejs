@@ -1,5 +1,11 @@
 <p style="font-size:16px;margin:0 0 12px">Hi <%= patient_name %>,</p>
 <p style="margin:0 0 12px">Your laboratory result from <strong><%= tenant_name %></strong> is ready. A copy of the report is attached to this email as a PDF.</p>
+<% if (typeof password_hint !== 'undefined' && password_hint) { %>
+<p style="margin:0 0 12px;padding:10px 12px;background:#fef3c7;border-left:3px solid #f59e0b;font-size:13px;color:#78350f">
+	<strong>The attached PDF is password-protected.</strong><br>
+	The password is your birthdate in <strong>MMDDYYYY</strong> format (e.g. 11052026 for November 5, 2026).
+</p>
+<% } %>
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0;border-collapse:collapse">
 	<tr>
 		<td style="padding:4px 12px 4px 0;font-size:13px;color:#64748b">Lab number</td>
