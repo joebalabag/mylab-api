@@ -16,6 +16,7 @@ import * as QRCode from 'qrcode';
 import { UserService } from '../user/user.service';
 import { MailerService, SmtpOverride } from '@/common/mailer/mailer.service';
 import { renderHtmlToPdf } from '@/common/pdf/html-pdf.util';
+import { encryptPdfBuffer } from '@/common/pdf/pdf-encrypt.util';
 import { decryptSecret } from '@/common/crypto/aes.util';
 import { applyPagination, PagedResult } from '@/common/helpers/pagination.helper';
 
@@ -1400,6 +1401,15 @@ export class LabReportService {
 		});
 		if (!pdfBuf.length) throw new BadRequestException('Puppeteer produced an empty PDF.');
 
+		// Derive MMDDYYYY from birthdate — the agreed-upon password scheme for
+		// patient-facing result PDFs. Fall back to an unprotected send when the
+		// patient has no birthdate on file so the email still reaches them.
+		const pdfPassword = formatBirthdateAsPdfPassword(report.patient_birthdate);
+		const { buffer: finalPdfBuf, encrypted } = await encryptPdfBuffer(pdfBuf, pdfPassword || '');
+		if (pdfPassword && !encrypted) {
+			this.logger.warn(`Lab report ${lab_report_uuid}: PDF encryption unavailable, sending unprotected.`);
+		}
+
 		const tenantRow = await LabReport.knex()('tenants')
 			.select('display_name', 'legal_name',
 				'smtp_use_own', 'smtp_host', 'smtp_port', 'smtp_secure',
@@ -1455,7 +1465,7 @@ export class LabReportService {
 		const safeLabNumber = String(report.lab_number || report.uuid).replace(/[^A-Za-z0-9_.-]/g, '_');
 		const attachFilename = payload.filename?.trim() || `Lab Report ${safeLabNumber}.pdf`;
 		const tmpPath = path.join(os.tmpdir(), `mylab-${safeLabNumber}-${Date.now()}.pdf`);
-		await fs.promises.writeFile(tmpPath, pdfBuf);
+		await fs.promises.writeFile(tmpPath, finalPdfBuf);
 
 		try {
 			await this.mailer.sendTemplate(
@@ -1467,6 +1477,7 @@ export class LabReportService {
 					lab_number: report.lab_number || '(pending)',
 					test_summary: testSummary,
 					finalized_at: finalizedAt,
+					password_hint: encrypted ? pdfPassword : '',
 				},
 				{
 					attachments: [
@@ -1561,4 +1572,27 @@ export class LabReportService {
 	async setStatus(uuid: string, status: LabReportStatus, updated_by: string) {
 		return LabReport.query().patchAndFetchById(uuid, { status, updated_by } as any);
 	}
+}
+
+/**
+ * Format a patient birthdate as MMDDYYYY for the result-PDF password. Birth
+ * dates are stored as date-only columns but may arrive as `YYYY-MM-DD` strings
+ * or `Date` objects depending on the driver — parse both without letting UTC
+ * shifting slide us one day earlier. Returns '' when the value is missing or
+ * unparseable so the caller can fall back to an unprotected send.
+ */
+function formatBirthdateAsPdfPassword(bd: Date | string | null | undefined): string {
+	if (!bd) return '';
+	let year: number, month: number, day: number;
+	if (typeof bd === 'string') {
+		const m = bd.match(/^(\d{4})-(\d{2})-(\d{2})/);
+		if (!m) return '';
+		year = Number(m[1]); month = Number(m[2]); day = Number(m[3]);
+	} else {
+		const d = bd instanceof Date ? bd : new Date(bd as any);
+		if (isNaN(d.getTime())) return '';
+		year = d.getFullYear(); month = d.getMonth() + 1; day = d.getDate();
+	}
+	const pad = (n: number) => String(n).padStart(2, '0');
+	return `${pad(month)}${pad(day)}${year}`;
 }
