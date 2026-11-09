@@ -27,6 +27,7 @@ import { imageFileFilter, makeFieldRoutedStorage, makeUploadStorage, toPublicUrl
 
 import { TenantService } from './tenant.service';
 import { TenantMigrationService } from './tenant-migration.service';
+import { OwnerService } from '../owner/owner.service';
 import { encryptSecret } from '@/common/crypto/aes.util';
 import {
 	AlterTenantSubscriptionDTO,
@@ -67,13 +68,21 @@ export class TenantController {
 	constructor(
 		private readonly service: TenantService,
 		private readonly migration: TenantMigrationService,
+		private readonly owners: OwnerService,
 	) {}
 
 	@Get('/dashboard')
-	@ApiOperation({ summary: 'Tenant - Dashboard list (filters: date range, status[], keywords, pagination)' })
-	async dashboard(@Res() res: Response, @Query() filters: DashboardQueryDTO) {
+	@ApiOperation({
+		summary:
+			'Tenant - Dashboard list. Filters: date range, status[], keywords, pagination, owner_uuid (use "__none__" for unassigned).',
+	})
+	async dashboard(
+		@Res() res: Response,
+		@Query() filters: DashboardQueryDTO,
+		@Query('owner_uuid') owner_uuid: string | undefined,
+	) {
 		try {
-			const output = await this.service.listDashboard(filters);
+			const output = await this.service.listDashboard({ ...filters, owner_uuid });
 			return ApiResponseHelper.sendResponse(res, output);
 		} catch (error: any) {
 			return ApiResponseHelper.sendResponse(res, null, error?.message, 500);
@@ -115,13 +124,37 @@ export class TenantController {
 				return ApiResponseHelper.sendAlreadyExist(res, 'Store code + terminal combination already exists.');
 			}
 
-			const { company_logo: _ignoredLogo, lab_header_image: _ignoredHeader, ...rest } = data as any;
+			// `owner_uuid` is NOT a column on tenants; pull it out of the payload
+			// so it doesn't get passed to the insert, then wire it via
+			// OwnerService.assignTenant after the row lands.
+			const {
+				company_logo: _ignoredLogo,
+				lab_header_image: _ignoredHeader,
+				owner_uuid: assignOwnerUuid,
+				...rest
+			} = data as any;
 			const created = await this.service.create({
 				...rest,
 				company_logo:     logoFile   ? toPublicUrl(logoFile.path)   : undefined,
 				lab_header_image: headerFile ? toPublicUrl(headerFile.path) : undefined,
 				created_by: user?.name || user?.username || 'system',
 			});
+
+			if (assignOwnerUuid) {
+				try {
+					await this.owners.assignTenant(String(assignOwnerUuid), created.uuid);
+					(created as any).owner_uuid = assignOwnerUuid;
+				} catch (assignErr: any) {
+					// Tenant still created even if the assignment collides; surface
+					// the collision as a warning in the response message so the
+					// super-admin can retry from Owner Details.
+					return ApiResponseHelper.sendResponse(
+						res,
+						created,
+						`Tenant created, but owner assignment failed: ${assignErr?.message || 'unknown error'}`,
+					);
+				}
+			}
 
 			return ApiResponseHelper.sendResponse(res, created, 'Tenant created.');
 		} catch (error: any) {

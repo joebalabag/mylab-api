@@ -1,6 +1,6 @@
 import { Model } from 'objection';
 
-export type AuditActorType = 'user' | 'admin' | 'system' | 'anonymous';
+export type AuditActorType = 'user' | 'admin' | 'owner' | 'system' | 'anonymous';
 
 export type AuditAction =
 	| 'create'

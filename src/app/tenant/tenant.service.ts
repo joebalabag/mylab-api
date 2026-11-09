@@ -14,31 +14,77 @@ import { decryptSecret } from '@/common/crypto/aes.util';
 @Injectable()
 export class TenantService {
 	constructor(private readonly mailer: MailerService) {}
-	async listDashboard(filters: DashboardQueryDTO): Promise<PagedResult<Tenant>> {
-		const query = Tenant.query().orderBy('created_at', 'desc');
+	async listDashboard(
+		filters: DashboardQueryDTO & { owner_uuid?: string; include_owner?: boolean },
+	): Promise<PagedResult<Tenant>> {
+		const query = Tenant.query().orderBy('tenants.created_at', 'desc');
 
-		if (filters.date_from) query.where('created_at', '>=', filters.date_from);
-		if (filters.date_to) query.where('created_at', '<=', `${filters.date_to} 23:59:59`);
+		if (filters.date_from) query.where('tenants.created_at', '>=', filters.date_from);
+		if (filters.date_to) query.where('tenants.created_at', '<=', `${filters.date_to} 23:59:59`);
 
 		if (filters.status && filters.status.length) {
-			query.whereIn('status', filters.status);
+			query.whereIn('tenants.status', filters.status);
+		}
+
+		// Owner filter: '__none__' means "unassigned", any other value is an
+		// owner uuid. Super Tenants view + Owner Console both pivot on this.
+		if (filters.owner_uuid === '__none__') {
+			query.whereNotExists((qb) => {
+				qb.select('*')
+					.from('owner_tenants')
+					.whereRaw('owner_tenants.tenant_uuid = tenants.uuid');
+			});
+		} else if (filters.owner_uuid) {
+			query
+				.join('owner_tenants', 'owner_tenants.tenant_uuid', 'tenants.uuid')
+				.where('owner_tenants.owner_uuid', filters.owner_uuid);
 		}
 
 		if (filters.keywords) {
 			const kw = `%${filters.keywords}%`;
 			query.where((qb) => {
-				qb.where('display_name', 'ilike', kw)
-					.orWhere('legal_name', 'ilike', kw)
-					.orWhere('owner_name', 'ilike', kw)
-					.orWhere('store_code', 'ilike', kw)
-					.orWhere('branch', 'ilike', kw)
-					.orWhere('city', 'ilike', kw)
-					.orWhere('province', 'ilike', kw)
-					.orWhere('email_address', 'ilike', kw);
+				qb.where('tenants.display_name', 'ilike', kw)
+					.orWhere('tenants.legal_name', 'ilike', kw)
+					.orWhere('tenants.owner_name', 'ilike', kw)
+					.orWhere('tenants.store_code', 'ilike', kw)
+					.orWhere('tenants.branch', 'ilike', kw)
+					.orWhere('tenants.city', 'ilike', kw)
+					.orWhere('tenants.province', 'ilike', kw)
+					.orWhere('tenants.email_address', 'ilike', kw);
 			});
 		}
 
 		const page = await applyPagination<Tenant>(query as any, filters.page_number, filters.page_size);
+
+		// Attach a lightweight owner snapshot to each tenant row so the
+		// Super Tenants table can render the Owner column without an extra
+		// per-row query. One extra query keyed on the page's tenant_uuids.
+		const tenantUuidsForOwner = (page.results || []).map((r: any) => r.uuid).filter(Boolean);
+		if (filters.include_owner !== false && tenantUuidsForOwner.length) {
+			const joins = (await Tenant.knex()
+				.from('owner_tenants')
+				.join('owners', 'owners.uuid', 'owner_tenants.owner_uuid')
+				.whereIn('owner_tenants.tenant_uuid', tenantUuidsForOwner)
+				.select(
+					'owner_tenants.tenant_uuid as tenant_uuid',
+					'owners.uuid as owner_uuid',
+					'owners.name as owner_name',
+					'owners.business_name as owner_business_name',
+				)) as Array<{
+				tenant_uuid: string;
+				owner_uuid: string;
+				owner_name: string;
+				owner_business_name: string | null;
+			}>;
+			const byTenant = new Map<string, (typeof joins)[number]>();
+			for (const row of joins) byTenant.set(row.tenant_uuid, row);
+			for (const t of page.results as any[]) {
+				const row = byTenant.get(t.uuid);
+				t.owner = row
+					? { uuid: row.owner_uuid, name: row.owner_name, business_name: row.owner_business_name }
+					: null;
+			}
+		}
 
 		// Attach a lightweight snapshot of any scheduled subscription so the
 		// super-admin table can badge tenants who've already queued their next
