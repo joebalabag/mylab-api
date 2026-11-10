@@ -4,11 +4,13 @@ import {
 	IsEmail,
 	IsIn,
 	IsNotEmpty,
+	IsObject,
 	IsOptional,
 	IsString,
 	MinLength,
 } from 'class-validator';
 import { Match } from '@/common/validators/match.validator';
+import { IsPriceMap } from '@/common/validators/price-map.validator';
 
 export class CreateOwnerDTO {
 	@ApiProperty({ required: true, example: 'juan' })
@@ -231,14 +233,29 @@ export class OwnerUserStatusDTO {
 }
 
 export class OwnerBulkPriceEditDTO {
-	// Keyed by tenant_uuid → price. Unspecified tenants are left alone;
-	// tenants that don't currently list the item are skipped (we don't
-	// invent catalog rows without a category + group assignment).
+	// `prices` updates listings that already exist on the target tenant.
+	// `add` opts into cloning the item row (and its test_item_components,
+	// plus item_group/item_category if missing) from the owner's most
+	// recently modified listing of the same item_code, then stamping the
+	// supplied price. Separate keys so a client typing into a "Not listed"
+	// input cannot clone catalog rows without explicit intent.
 	@ApiProperty({
 		required: true,
 		example: { 't-a-main': 350, 't-a-south': 320 },
-		description: 'Map of tenant_uuid → price. Only tenants the caller owns are applied.',
+		description: 'Map of tenant_uuid → price. Only tenants the caller owns are applied. Tenants without an existing listing are skipped — use `add` to clone from another tenant.',
 	})
 	@IsNotEmpty()
+	@IsObject()
+	@IsPriceMap()
 	prices!: Record<string, number>;
+
+	@ApiProperty({
+		required: false,
+		example: { 't-a-north': 310 },
+		description: 'Map of tenant_uuid → price for tenants that do NOT currently list the item. The item row is cloned from the owner-owned tenant whose test_items row has the most recent updated_at, along with its test_item_components; the target tenant\'s item_category/item_group are auto-created by code if missing.',
+	})
+	@IsOptional()
+	@IsObject()
+	@IsPriceMap()
+	add?: Record<string, number>;
 }

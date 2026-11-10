@@ -408,8 +408,14 @@ export class OwnerController {
 				item_code,
 				data.prices || {},
 				user?.name || user?.username || 'owner-self',
+				data.add || {},
+				user,
 			);
-			return ApiResponseHelper.sendResponse(res, result, `Updated ${result.touched} price${result.touched === 1 ? '' : 's'}.`);
+			const parts: string[] = [];
+			if (result.touched) parts.push(`Updated ${result.touched} price${result.touched === 1 ? '' : 's'}`);
+			if (result.added) parts.push(`added listing${result.added === 1 ? '' : 's'} to ${result.added} tenant${result.added === 1 ? '' : 's'}`);
+			const summary = parts.length ? `${parts.join(' and ')}.` : 'No changes saved.';
+			return ApiResponseHelper.sendResponse(res, result, summary);
 		} catch (error: any) {
 			return ApiResponseHelper.sendResponse(res, null, error?.message, error?.status ?? 500);
 		}
