@@ -1,6 +1,6 @@
 import { Model } from 'objection';
 
-export type PaymentStatus = 'pending' | 'approved' | 'rejected';
+export type PaymentStatus = 'pending' | 'approved' | 'rejected' | 'voided';
 
 export class TenantSubscriptionPayment extends Model {
 	static tableName = 'tenant_subscription_payments';
@@ -32,6 +32,11 @@ export class TenantSubscriptionPayment extends Model {
 	payment_rejected_by_name?: string | null;
 	payment_rejected_datetime?: Date | null;
 	rejection_reason?: string | null;
+
+	payment_voided_by_uuid?: string | null;
+	payment_voided_by_name?: string | null;
+	payment_voided_datetime?: Date | null;
+	void_reason?: string | null;
 
 	payment_attachment_file?: string | null;
 

@@ -196,6 +196,7 @@ export class TenantSubscriptionPaymentService {
 		approved_by_uuid: string;
 		approved_by_name: string;
 		subscription_start?: string;
+		subscription_end?: string;
 	}): Promise<{
 		payment: TenantSubscriptionPayment;
 		activation_mode: 'immediate' | 'scheduled';
@@ -215,6 +216,7 @@ export class TenantSubscriptionPaymentService {
 				approved_by_uuid: params.approved_by_uuid,
 				approved_by_name: params.approved_by_name,
 				subscription_start: params.subscription_start,
+				subscription_end: params.subscription_end,
 			});
 		});
 	}
@@ -229,7 +231,12 @@ export class TenantSubscriptionPaymentService {
 	private async applyApprovedPayment(
 		trx: KnexTrx,
 		payment: TenantSubscriptionPayment,
-		by: { approved_by_uuid: string | null; approved_by_name: string; subscription_start?: string },
+		by: {
+			approved_by_uuid: string | null;
+			approved_by_name: string;
+			subscription_start?: string;
+			subscription_end?: string;
+		},
 	): Promise<{
 		payment: TenantSubscriptionPayment;
 		activation_mode: 'immediate' | 'scheduled';
@@ -257,13 +264,79 @@ export class TenantSubscriptionPaymentService {
 			? Math.ceil((currentExpiry!.getTime() - now.getTime()) / 86_400_000)
 			: 0;
 
+		const hasOverride = !!(by.subscription_start || by.subscription_end);
+
 		let activation_mode: 'immediate' | 'scheduled';
 		let start: Date;
 		let end: Date;
+		let effective_days: number;
 
-		if (!hasActivePlan) {
+		if (hasOverride) {
+			// Admin-override path: explicit start and/or end. Bypasses the 3-rule
+			// block entirely — admin has taken manual control.
+			start = by.subscription_start
+				? new Date(by.subscription_start)
+				: (hasActivePlan ? new Date(currentExpiry!) : now);
+			if (by.subscription_end) {
+				end = new Date(by.subscription_end);
+			} else {
+				end = new Date(start);
+				end.setDate(end.getDate() + Number(payment.subscription_days));
+			}
+			if (!(end.getTime() > start.getTime())) {
+				throw new BadRequestException('Subscription end must be after subscription start.');
+			}
+			effective_days = Math.round((end.getTime() - start.getTime()) / 86_400_000);
+			activation_mode = start.getTime() > now.getTime() ? 'scheduled' : 'immediate';
+
+			if (activation_mode === 'scheduled') {
+				const existingScheduled = await TenantSubscriptionHistory.query(trx)
+					.findOne({ tenant_uuid: payment.tenant_uuid, status: 'scheduled' });
+				if (existingScheduled) {
+					throw new BadRequestException('A scheduled subscription already exists for this tenant.');
+				}
+				await TenantSubscriptionHistory.query(trx).insert({
+					tenant_uuid: payment.tenant_uuid,
+					subscription_plan_uuid: payment.subscription_plan_uuid,
+					subscription_plan_code: payment.subscription_plan_code,
+					subscription_plan_name: payment.subscription_plan_name,
+					subscription_start: start,
+					subscription_end: end,
+					subscription_days: effective_days,
+					expiry_warning_days: warning_days,
+					subscription_plan_amount: payment.subscription_plan_amount,
+					status: 'scheduled',
+					activated_by_payment_uuid: payment.uuid,
+					created_by: by.approved_by_name,
+				} as any);
+			} else {
+				await this.expireOpenHistoryRows(trx, payment.tenant_uuid);
+				await TenantSubscriptionHistory.query(trx).insert({
+					tenant_uuid: payment.tenant_uuid,
+					subscription_plan_uuid: payment.subscription_plan_uuid,
+					subscription_plan_code: payment.subscription_plan_code,
+					subscription_plan_name: payment.subscription_plan_name,
+					subscription_start: start,
+					subscription_end: end,
+					subscription_days: effective_days,
+					expiry_warning_days: warning_days,
+					subscription_plan_amount: payment.subscription_plan_amount,
+					status: 'active',
+					activated_by_payment_uuid: payment.uuid,
+					created_by: by.approved_by_name,
+				} as any);
+				await Tenant.query(trx).patch({
+					current_subscription_plan_uuid: payment.subscription_plan_uuid,
+					current_subscription_days: effective_days,
+					current_subscription_start: start,
+					current_subscription_expiry: end,
+					current_subscription_expiry_warning_days: warning_days,
+					current_subscription_plan_amount: payment.subscription_plan_amount,
+				} as any).where({ uuid: payment.tenant_uuid });
+			}
+		} else if (!hasActivePlan) {
 			activation_mode = 'immediate';
-			start = by.subscription_start ? new Date(by.subscription_start) : now;
+			start = now;
 			end = new Date(start);
 			end.setDate(end.getDate() + Number(payment.subscription_days));
 
@@ -382,6 +455,37 @@ export class TenantSubscriptionPaymentService {
 		}
 
 		return { payment: updated, warnings };
+	}
+
+	/**
+	 * Void an approved payment. Book-keeping only — the tenant's
+	 * current_subscription_* fields are intentionally left untouched. Admins
+	 * who want to roll the subscription back do so via the tenant
+	 * "alter-subscription" endpoint (surfaced on the Record Payment modal as
+	 * the "Adjust current expiry" override).
+	 */
+	async void(params: {
+		uuid: string;
+		void_reason: string;
+		voided_by_uuid: string;
+		voided_by_name: string;
+	}): Promise<TenantSubscriptionPayment> {
+		const payment = await this.findByUuid(params.uuid);
+		if (!payment) throw new NotFoundException('Payment not found.');
+		if (payment.payment_status !== 'approved') {
+			throw new BadRequestException(
+				`Only approved payments can be voided. This payment is ${payment.payment_status}.`,
+			);
+		}
+		const updated = (await TenantSubscriptionPayment.query().patchAndFetchById(params.uuid, {
+			payment_status: 'voided',
+			payment_voided_by_uuid: params.voided_by_uuid,
+			payment_voided_by_name: params.voided_by_name,
+			payment_voided_datetime: new Date(),
+			void_reason: params.void_reason,
+			updated_by: params.voided_by_name,
+		} as any)) as unknown as TenantSubscriptionPayment;
+		return updated;
 	}
 
 	/** Shared warning payload for the "tenant has no contact email" case. */

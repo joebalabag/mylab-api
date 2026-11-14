@@ -7,6 +7,7 @@ import { recordAuditEvent, TrxLike } from '../audit-log/audit-log.service';
 import { AuditActor, AuditRequestMeta } from '../audit-log/audit-context';
 import { AuthService } from '../auth/auth.service';
 import { Tenant } from '../tenant/tenant.model';
+import { TenantSubscriptionHistory } from '../tenant-subscription-payment/tenant-subscription-history.model';
 import { Owner } from './owner.model';
 import { OwnerTenant } from './owner-tenant.model';
 
@@ -238,16 +239,29 @@ export class OwnerService {
 	async listTenantsWithMetrics(owner_uuid: string): Promise<any[]> {
 		const tenantRows = (await Tenant.query()
 			.join('owner_tenants', 'owner_tenants.tenant_uuid', 'tenants.uuid')
+			.leftJoin('subscription_plans', 'subscription_plans.uuid', 'tenants.current_subscription_plan_uuid')
 			.where('owner_tenants.owner_uuid', owner_uuid)
 			.select(
 				'tenants.uuid as tenant_uuid',
 				'tenants.display_name',
 				'tenants.store_code',
 				'tenants.branch',
+				'tenants.address_street1',
+				'tenants.address_street2',
+				'tenants.city',
+				'tenants.province',
 				'tenants.email_address',
 				'tenants.contact_number',
 				'tenants.status',
 				'owner_tenants.created_at as assigned_at',
+				'tenants.current_subscription_plan_uuid',
+				'tenants.current_subscription_days',
+				'tenants.current_subscription_start',
+				'tenants.current_subscription_expiry',
+				'tenants.current_subscription_plan_amount',
+				'tenants.current_subscription_expiry_warning_days',
+				'subscription_plans.name as current_subscription_plan_name',
+				'subscription_plans.code as current_subscription_plan_code',
 			)
 			.orderBy('tenants.display_name')) as unknown as any[];
 
@@ -304,8 +318,32 @@ export class OwnerService {
 			.select('tenant_uuid')
 			.max('finalized_at as last')) as Array<{ tenant_uuid: string; last: Date | null }>;
 
+		// Scheduled (queued) next subscription — mirrors super's TenantService
+		// so the owner tenants table can show a "Next:" chip when a renewal
+		// is already queued. Picks the earliest when multiple exist.
+		const scheduledRows = (await TenantSubscriptionHistory.query()
+			.whereIn('tenant_uuid', tenantUuids)
+			.andWhere('status', 'scheduled')) as unknown as Array<{
+			tenant_uuid: string;
+			subscription_plan_uuid?: string | null;
+			subscription_plan_code: string;
+			subscription_plan_name: string;
+			subscription_start: Date;
+			subscription_end: Date;
+			subscription_days: number;
+			subscription_plan_amount: number;
+		}>;
+		const bySchedTenant = new Map<string, (typeof scheduledRows)[number]>();
+		for (const row of scheduledRows) {
+			const prev = bySchedTenant.get(row.tenant_uuid);
+			if (!prev || new Date(row.subscription_start) < new Date(prev.subscription_start)) {
+				bySchedTenant.set(row.tenant_uuid, row);
+			}
+		}
+
 		const byTenant: Record<string, any> = {};
 		for (const t of tenantRows) {
+			const s = bySchedTenant.get(t.tenant_uuid);
 			byTenant[t.tenant_uuid] = {
 				...t,
 				active_users: 0,
@@ -313,6 +351,17 @@ export class OwnerService {
 				mtd_revenue: 0,
 				pending_requisitions: 0,
 				last_result_at: null,
+				next_subscription: s
+					? {
+							subscription_plan_uuid:   s.subscription_plan_uuid ?? null,
+							subscription_plan_code:   s.subscription_plan_code,
+							subscription_plan_name:   s.subscription_plan_name,
+							subscription_start:       s.subscription_start,
+							subscription_end:         s.subscription_end,
+							subscription_days:        s.subscription_days,
+							subscription_plan_amount: s.subscription_plan_amount,
+						}
+					: null,
 			};
 		}
 		for (const r of activeUsersRows) byTenant[r.tenant_uuid].active_users = Number(r.count);

@@ -108,12 +108,22 @@ export class UploadSubscriptionPaymentDTO {
 export class ApproveSubscriptionPaymentDTO {
 	@ApiProperty({
 		required: false,
-		description: 'Optional override for the subscription start date. Defaults to now.',
+		description: 'Optional override for the subscription start date. Defaults to now (or the current plan expiry when scheduled).',
 	})
 	@Transform(emptyToUndef)
 	@IsOptional()
 	@IsDateString()
 	subscription_start?: string;
+
+	@ApiProperty({
+		required: false,
+		description:
+			'Optional override for the subscription expiry date. When set, bypasses the 5-day auto-approve block and takes precedence over plan.days_duration (hard override).',
+	})
+	@Transform(emptyToUndef)
+	@IsOptional()
+	@IsDateString()
+	subscription_end?: string;
 }
 
 export class RejectSubscriptionPaymentDTO {
@@ -121,6 +131,13 @@ export class RejectSubscriptionPaymentDTO {
 	@IsNotEmpty()
 	@IsString()
 	rejection_reason!: string;
+}
+
+export class VoidSubscriptionPaymentDTO {
+	@ApiProperty({ required: true, description: 'Audit reason recorded on the voided payment.' })
+	@IsNotEmpty()
+	@IsString()
+	void_reason!: string;
 }
 
 export class CreatePaypalOrderDTO {
@@ -162,8 +179,8 @@ export class SubscriptionPaymentDashboardQueryDTO extends DashboardQueryDTO {
 	@IsUUID()
 	tenant_uuid?: string;
 
-	@ApiProperty({ required: false, enum: ['pending', 'approved', 'rejected'] })
+	@ApiProperty({ required: false, enum: ['pending', 'approved', 'rejected', 'voided'] })
 	@IsOptional()
-	@IsIn(['pending', 'approved', 'rejected'])
-	payment_status?: 'pending' | 'approved' | 'rejected';
+	@IsIn(['pending', 'approved', 'rejected', 'voided'])
+	payment_status?: 'pending' | 'approved' | 'rejected' | 'voided';
 }

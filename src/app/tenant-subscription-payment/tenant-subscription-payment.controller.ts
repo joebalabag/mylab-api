@@ -26,6 +26,7 @@ import {
 	RejectSubscriptionPaymentDTO,
 	SubscriptionPaymentDashboardQueryDTO,
 	UploadSubscriptionPaymentDTO,
+	VoidSubscriptionPaymentDTO,
 } from './dto/tenant-subscription-payment.dto';
 import { TenantSubscriptionPayment } from './tenant-subscription-payment.model';
 
@@ -146,6 +147,7 @@ export class TenantSubscriptionPaymentController {
 				approved_by_uuid: current.uuid,
 				approved_by_name: current?.name || current?.username || 'admin',
 				subscription_start: data.subscription_start,
+				subscription_end: data.subscription_end,
 			});
 			const message =
 				output.activation_mode === 'immediate'
@@ -235,6 +237,33 @@ export class TenantSubscriptionPaymentController {
 				rejected_by_name: current?.name || current?.username || 'admin',
 			});
 			return ApiResponseHelper.sendResponse(res, payment, 'Payment rejected.', 200, warnings);
+		} catch (error: any) {
+			return ApiResponseHelper.sendResponse(res, null, error?.message, error?.status ?? 500);
+		}
+	}
+
+	@Patch('/void/:uuid')
+	@ApiOperation({
+		summary:
+			'Void an approved payment (admin only). Book-keeping only — the tenant\'s active subscription is intentionally not rolled back. Use the tenant alter-subscription endpoint if a rollback is also needed.',
+	})
+	@ApiParam({ name: 'uuid', required: true })
+	@ApiBody({ type: VoidSubscriptionPaymentDTO })
+	async voidPayment(
+		@Res() res: Response,
+		@Param('uuid') uuid: string,
+		@Body() data: VoidSubscriptionPaymentDTO,
+		@CurrentUser() current: any
+	) {
+		try {
+			requireAdmin(current);
+			const payment = await this.service.void({
+				uuid,
+				void_reason: data.void_reason,
+				voided_by_uuid: current.uuid,
+				voided_by_name: current?.name || current?.username || 'admin',
+			});
+			return ApiResponseHelper.sendResponse(res, payment, 'Payment voided.');
 		} catch (error: any) {
 			return ApiResponseHelper.sendResponse(res, null, error?.message, error?.status ?? 500);
 		}
