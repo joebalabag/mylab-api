@@ -14,6 +14,8 @@ import * as ejs from 'ejs';
 import * as QRCode from 'qrcode';
 
 import { UserService } from '../user/user.service';
+import { OwnerService } from '../owner/owner.service';
+import { Tenant } from '../tenant/tenant.model';
 import { MailerService, SmtpOverride } from '@/common/mailer/mailer.service';
 import { renderHtmlToPdf } from '@/common/pdf/html-pdf.util';
 import { decryptSecret } from '@/common/crypto/aes.util';
@@ -149,6 +151,7 @@ export class LabReportService {
 	constructor(
 		private readonly userService: UserService,
 		private readonly mailer: MailerService,
+		private readonly ownerService: OwnerService,
 	) {}
 
 	async listDashboard(filters: LabReportDashboardQueryDTO): Promise<PagedResult<LabReportWithMeta>> {
@@ -196,7 +199,15 @@ export class LabReportService {
 			)
 			.orderBy('lr.created_at', 'desc');
 
-		if (filters.tenant_uuid) query.where('lr.tenant_uuid', filters.tenant_uuid);
+		// Phase 3 escape hatch — the branch-search helper passes a list of
+		// sibling tenant uuids via the private `__branch_tenant_uuids` key
+		// so one dashboard query can fan out across the caller's branches.
+		const branchTenantUuids = (filters as any).__branch_tenant_uuids as string[] | undefined;
+		if (branchTenantUuids && branchTenantUuids.length) {
+			query.whereIn('lr.tenant_uuid', branchTenantUuids);
+		} else if (filters.tenant_uuid) {
+			query.where('lr.tenant_uuid', filters.tenant_uuid);
+		}
 		if (filters.patient_uuid) query.where('lr.patient_uuid', filters.patient_uuid);
 		if (filters.patient_requisition_uuid) query.where('lr.patient_requisition_uuid', filters.patient_requisition_uuid);
 		if (filters.item_category_uuid) query.where('lr.item_category_uuid', filters.item_category_uuid);
@@ -1560,5 +1571,126 @@ export class LabReportService {
 
 	async setStatus(uuid: string, status: LabReportStatus, updated_by: string) {
 		return LabReport.query().patchAndFetchById(uuid, { status, updated_by } as any);
+	}
+
+	/* ─── Phase 3 — Branch result search ───────────────────────────────
+	 *
+	 * "Branch" = another tenant owned by the same owner as the caller's
+	 * home tenant. Read access is loosened for FINAL reports in that pool;
+	 * everything else (drafts, voided, writes) stays single-tenant.
+	 */
+
+	// Returns the caller's sibling tenants (excluding the home tenant).
+	// Empty when the home tenant has no owner.
+	async listBranchesForUser(home_tenant_uuid: string): Promise<any[]> {
+		const owner_uuid = await this.findOwnerOfTenant(home_tenant_uuid);
+		if (!owner_uuid) return [];
+		const ownedUuids = await this.ownerService.listOwnedTenantUuids(owner_uuid);
+		const siblingUuids = ownedUuids.filter((uuid) => uuid !== home_tenant_uuid);
+		if (!siblingUuids.length) return [];
+		return Tenant.query()
+			.whereIn('uuid', siblingUuids)
+			.select('uuid as tenant_uuid', 'display_name', 'store_code', 'branch', 'status')
+			.orderBy('display_name') as unknown as any[];
+	}
+
+	// Scoped search of FINAL lab reports across the caller's branches.
+	// Enforces: both tenants share an owner, status='finalized' only,
+	// callerRequestedTenantUuid must be in the sibling pool.
+	async searchBranchReports(
+		home_tenant_uuid: string,
+		filters: {
+			tenant_uuid?: string;
+			date_from?: string;
+			date_to?: string;
+			keywords?: string;
+			page_number?: number;
+			page_size?: number;
+		},
+	): Promise<PagedResult<LabReportWithMeta>> {
+		const owner_uuid = await this.findOwnerOfTenant(home_tenant_uuid);
+		if (!owner_uuid) {
+			return { results: [], total: 0, page_number: 1, page_size: 25 } as unknown as PagedResult<LabReportWithMeta>;
+		}
+		const ownedUuids = await this.ownerService.listOwnedTenantUuids(owner_uuid);
+		const siblingUuids = ownedUuids.filter((uuid) => uuid !== home_tenant_uuid);
+		if (!siblingUuids.length) {
+			return { results: [], total: 0, page_number: 1, page_size: 25 } as unknown as PagedResult<LabReportWithMeta>;
+		}
+		if (filters.tenant_uuid && !siblingUuids.includes(filters.tenant_uuid)) {
+			throw new BadRequestException('Requested tenant is not one of your branches.');
+		}
+
+		const scopedTenants = filters.tenant_uuid ? [filters.tenant_uuid] : siblingUuids;
+
+		return this.listDashboard({
+			tenant_uuid: undefined,
+			status: ['finalized'] as any,
+			date_from: filters.date_from,
+			date_to: filters.date_to,
+			keywords: filters.keywords,
+			page_number: filters.page_number,
+			page_size: filters.page_size,
+			// The dashboard helper reads a single tenant_uuid filter — so we
+			// run its query directly with an IN clause via the escape hatch.
+			__branch_tenant_uuids: scopedTenants,
+		} as any);
+	}
+
+	// Check if a user may READ an existing lab report. Admin always ok;
+	// user ok on same tenant; user ok on a sibling branch if the report is
+	// FINAL; everyone else rejected. Returns a flag the caller can use for
+	// audit stamping.
+	async canUserReadReport(
+		user: { type?: string; tenant_uuid?: string; uuid?: string },
+		report: LabReport,
+	): Promise<{ allow: boolean; cross_tenant: boolean }> {
+		if (user?.type === 'admin') return { allow: true, cross_tenant: false };
+		if (user?.type === 'user' && user.tenant_uuid === report.tenant_uuid) {
+			return { allow: true, cross_tenant: false };
+		}
+		if (user?.type === 'user' && user.tenant_uuid && report.status === 'finalized') {
+			// Both tenants must belong to the same owner.
+			const [homeOwner, reportOwner] = await Promise.all([
+				this.findOwnerOfTenant(user.tenant_uuid),
+				this.findOwnerOfTenant(report.tenant_uuid),
+			]);
+			if (homeOwner && reportOwner && homeOwner === reportOwner) {
+				return { allow: true, cross_tenant: true };
+			}
+		}
+		return { allow: false, cross_tenant: false };
+	}
+
+	// Insert a row into lab_report_access_logs for a cross-tenant READ.
+	// Same-tenant reads are NOT logged here (they're the baseline case);
+	// public QR views already have their own insertion in renderPublicHtml.
+	async writeCrossTenantAccessLog(
+		report: LabReport,
+		accessed_from_tenant_uuid: string,
+		meta: { clientIp?: string | null; userAgent?: string | null } = {},
+	): Promise<void> {
+		try {
+			await LabReportAccessLog.query().insert({
+				lab_report_uuid: report.uuid,
+				tenant_uuid: report.tenant_uuid,
+				client_ip: meta.clientIp ?? null,
+				user_agent: meta.userAgent ? String(meta.userAgent).slice(0, 512) : null,
+				accessed_from_tenant_uuid,
+				cross_tenant: true,
+			} as any);
+		} catch (e: any) {
+			// Audit writes are best-effort — don't fail the read if the log
+			// can't be persisted. Surface in server logs for ops.
+			this.logger.warn(`Failed to write cross-tenant access log: ${e?.message || e}`);
+		}
+	}
+
+	private async findOwnerOfTenant(tenant_uuid: string): Promise<string | null> {
+		if (!tenant_uuid) return null;
+		const row = (await LabReport.knex()('owner_tenants')
+			.where({ tenant_uuid })
+			.first('owner_uuid')) as { owner_uuid: string } | undefined;
+		return row?.owner_uuid || null;
 	}
 }

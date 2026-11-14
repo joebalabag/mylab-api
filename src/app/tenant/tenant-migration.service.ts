@@ -1,6 +1,8 @@
 import {
 	ConflictException,
 	ForbiddenException,
+	forwardRef,
+	Inject,
 	Injectable,
 	NotFoundException,
 	UnauthorizedException,
@@ -9,6 +11,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { transaction as objectionTransaction } from 'objection';
 
 import { Admin } from '../admin/admin.model';
+import { Owner } from '../owner/owner.model';
+import { OwnerService } from '../owner/owner.service';
 import { Tenant } from './tenant.model';
 import { AuthService } from '../auth/auth.service';
 import { COPYABLE_CATALOG_TABLES, CopyableCatalogTable } from './dto/tenant-migration.dto';
@@ -53,7 +57,104 @@ const COUNT_REPORT_TABLES = {
 
 @Injectable()
 export class TenantMigrationService {
-	constructor(private readonly authService: AuthService) {}
+	constructor(
+		private readonly authService: AuthService,
+		@Inject(forwardRef(() => OwnerService))
+		private readonly ownerService: OwnerService,
+	) {}
+
+	// Shared pre-flight for owner-driven migration actions:
+	//   1. caller must be an authenticated owner,
+	//   2. caller must own the target tenant (owner_tenants row),
+	//   3. caller re-enters their password (defence against hijacked session),
+	//   4. target tenant must exist.
+	private async authoriseAsOwner(currentUser: any, password: string, targetTenantUuid: string) {
+		if (!currentUser || currentUser.type !== 'owner' || !currentUser.uuid) {
+			throw new ForbiddenException('Owner token required.');
+		}
+		if (!(await this.ownerService.ownsTenant(currentUser.uuid, targetTenantUuid))) {
+			throw new ForbiddenException('Tenant is not owned by the signed-in owner.');
+		}
+		const me = (await Owner.query().findById(currentUser.uuid)) as Owner | undefined;
+		if (!me) throw new UnauthorizedException('Session owner not found.');
+		const ok = await this.authService.validatePassword(password, (me as any).passphrase);
+		if (!ok) throw new UnauthorizedException('Password does not match.');
+		const tenant = await Tenant.query().findById(targetTenantUuid);
+		if (!tenant) throw new NotFoundException('Target tenant not found.');
+	}
+
+	// Record counts with owner-only (no password) check.
+	async recordCountsAsOwner(targetTenantUuid: string, currentUser: any) {
+		if (!currentUser || currentUser.type !== 'owner' || !currentUser.uuid) {
+			throw new ForbiddenException('Owner token required.');
+		}
+		if (!(await this.ownerService.ownsTenant(currentUser.uuid, targetTenantUuid))) {
+			throw new ForbiddenException('Tenant is not owned by the signed-in owner.');
+		}
+		return this.recordCountsInternal(targetTenantUuid);
+	}
+
+	async deleteTransactionsAsOwner(targetTenantUuid: string, password: string, currentUser: any) {
+		await this.authoriseAsOwner(currentUser, password, targetTenantUuid);
+		return this.runTransactionsDelete(targetTenantUuid);
+	}
+
+	async deleteLookupDataAsOwner(targetTenantUuid: string, password: string, currentUser: any) {
+		await this.authoriseAsOwner(currentUser, password, targetTenantUuid);
+		const knex = Tenant.knex();
+		const counts: Record<string, number> = {};
+		await objectionTransaction(knex, async (trx) => {
+			for (const table of LOOKUP_DELETE_ORDER) {
+				counts[table] = await trx(table).where({ tenant_uuid: targetTenantUuid }).delete();
+			}
+		});
+		return counts;
+	}
+
+	async deletePatientRecordsAsOwner(targetTenantUuid: string, password: string, currentUser: any) {
+		await this.authoriseAsOwner(currentUser, password, targetTenantUuid);
+		const txCounts = await this.runTransactionsDelete(targetTenantUuid);
+		const knex = Tenant.knex();
+		let patientsDeleted = 0;
+		await objectionTransaction(knex, async (trx) => {
+			patientsDeleted = await trx('patients').where({ tenant_uuid: targetTenantUuid }).delete();
+		});
+		return { ...txCounts, patients: patientsDeleted };
+	}
+
+	async copyCatalogAsOwner(
+		targetTenantUuid: string,
+		password: string,
+		sourceTenantUuid: string,
+		tables: CopyableCatalogTable[],
+		currentUser: any,
+	) {
+		await this.authoriseAsOwner(currentUser, password, targetTenantUuid);
+		// Source must also be owned by the caller — the spec explicitly
+		// narrows copy-catalog sources to the owner's own tenants.
+		if (!(await this.ownerService.ownsTenant(currentUser.uuid, sourceTenantUuid))) {
+			throw new ForbiddenException('Source tenant is not owned by the signed-in owner.');
+		}
+		return this.runCopyCatalog(targetTenantUuid, sourceTenantUuid, tables);
+	}
+
+	private async recordCountsInternal(targetTenantUuid: string) {
+		const tenant = await Tenant.query().findById(targetTenantUuid);
+		if (!tenant) throw new NotFoundException('Target tenant not found.');
+		const knex = Tenant.knex();
+		const transactions: Record<string, number> = {};
+		for (const table of COUNT_REPORT_TABLES.transactions) {
+			const [{ count }] = await knex(table).where({ tenant_uuid: targetTenantUuid }).count();
+			transactions[table] = Number(count);
+		}
+		const [{ count: patientsCount }] = await knex('patients').where({ tenant_uuid: targetTenantUuid }).count();
+		const catalog: Record<string, number> = {};
+		for (const table of COUNT_REPORT_TABLES.catalog) {
+			const [{ count }] = await knex(table).where({ tenant_uuid: targetTenantUuid }).count();
+			catalog[table] = Number(count);
+		}
+		return { tenant_uuid: targetTenantUuid, transactions, patients: Number(patientsCount), catalog };
+	}
 
 	// Shared pre-flight for every migration action:
 	//   1. caller must be an authenticated super_admin,
@@ -151,6 +252,16 @@ export class TenantMigrationService {
 		currentUser: any,
 	) {
 		await this.authorise(currentUser, password, targetTenantUuid);
+		return this.runCopyCatalog(targetTenantUuid, sourceTenantUuid, tables);
+	}
+
+	// Internal: copy-catalog core logic without any auth. Callers (admin or
+	// owner) authorise first, then invoke this.
+	private async runCopyCatalog(
+		targetTenantUuid: string,
+		sourceTenantUuid: string,
+		tables: CopyableCatalogTable[],
+	) {
 		if (sourceTenantUuid === targetTenantUuid) {
 			throw new ConflictException('Source and target tenant must differ.');
 		}

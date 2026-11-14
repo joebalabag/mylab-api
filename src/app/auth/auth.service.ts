@@ -8,6 +8,8 @@ import { formatReadableDateTime } from '@/common/helpers/timezone.helper';
 import { Admin } from '../admin/admin.model';
 import { User } from '../user/user.model';
 import { UserPasswordReset } from '../user/user-password-reset.model';
+import { Owner } from '../owner/owner.model';
+import { OwnerPasswordReset } from '../owner/owner-password-reset.model';
 import { Tenant } from '../tenant/tenant.model';
 import { TenantSubscriptionPaymentService } from '../tenant-subscription-payment/tenant-subscription-payment.service';
 
@@ -27,6 +29,12 @@ export interface UserLoginValidation {
 	message: string;
 	user?: User;
 	tenant?: Tenant;
+}
+
+export interface OwnerLoginValidation {
+	isAllowLogin: boolean;
+	message: string;
+	owner?: Owner;
 }
 
 @Injectable()
@@ -73,6 +81,40 @@ export class AuthService {
 				type: 'user',
 			}),
 		};
+	}
+
+	signOwnerToken(owner: Owner): { access_token: string } {
+		return {
+			access_token: this.jwtService.sign({
+				uuid: owner.uuid,
+				username: owner.username,
+				name: owner.name,
+				// Owners have no tenant scope — the token carries the identity
+				// and `/owner/me/*` endpoints do per-request ownership checks
+				// against the owner_tenants join.
+				type: 'owner',
+			}),
+		};
+	}
+
+	async validateOwnerLogin(usernameOrEmail: string, password: string): Promise<OwnerLoginValidation> {
+		const input = String(usernameOrEmail || '').trim().toLowerCase();
+		if (!input) return { isAllowLogin: false, message: 'Invalid credentials.' };
+		// Accept either the username column or the email column. Owner email
+		// is nullable, so skip email lookup when empty.
+		let owner = (await Owner.query().whereRaw('LOWER(username) = ?', [input]).first()) as Owner | undefined;
+		if (!owner && input.includes('@')) {
+			owner = (await Owner.query().whereRaw('LOWER(email) = ?', [input]).first()) as Owner | undefined;
+		}
+		if (!owner) return { isAllowLogin: false, message: 'Invalid credentials.' };
+
+		if ((owner.status || '').toLowerCase() !== 'active') {
+			return { isAllowLogin: false, message: `Your owner account is ${owner.status}.` };
+		}
+		const ok = await this.validatePassword(password, owner.passphrase);
+		if (!ok) return { isAllowLogin: false, message: 'Invalid credentials.' };
+
+		return { isAllowLogin: true, message: 'Login successful.', owner };
 	}
 
 	async validateAdminLogin(username: string, password: string): Promise<AdminLoginValidation> {
@@ -248,5 +290,129 @@ export class AuthService {
 			},
 			{ fromName: 'MyLab' },
 		);
+	}
+
+	// ─── Owner password reset ───────────────────────────────────────────
+	// Admin-triggered (Phase 1) and owner-initiated (Phase 2) share the
+	// same token+email machinery, mirroring the user-reset flow above.
+
+	async requestOwnerPasswordReset(
+		owner_uuid: string,
+		ip: string | null,
+		userAgent: string | null,
+	): Promise<{ sent: boolean; reason?: string }> {
+		const owner = (await Owner.query().findOne({ uuid: owner_uuid })) as Owner | undefined;
+		if (!owner) return { sent: false, reason: 'not_found' };
+		return this.generateAndMailOwnerReset(owner, ip, userAgent);
+	}
+
+	// Public forgot-password entry point. Non-enumerating: any outcome is
+	// reported as "if an account matches, an email is on its way" — only
+	// the audit log tells apart "unknown username" vs "mail failed".
+	async requestOwnerPasswordResetByUsername(
+		usernameOrEmail: string,
+		ip: string | null,
+		userAgent: string | null,
+	): Promise<void> {
+		const input = String(usernameOrEmail || '').trim().toLowerCase();
+		if (!input) return;
+		let owner = (await Owner.query().whereRaw('LOWER(username) = ?', [input]).first()) as Owner | undefined;
+		if (!owner && input.includes('@')) {
+			owner = (await Owner.query().whereRaw('LOWER(email) = ?', [input]).first()) as Owner | undefined;
+		}
+		if (!owner) {
+			this.logger.log(`Owner password reset requested for unknown identity '${input}' — silently ignored.`);
+			return;
+		}
+		const result = await this.generateAndMailOwnerReset(owner, ip, userAgent);
+		if (!result.sent) {
+			this.logger.log(`Owner password reset for '${input}' skipped: ${result.reason}`);
+		}
+	}
+
+	private async generateAndMailOwnerReset(
+		owner: Owner,
+		ip: string | null,
+		userAgent: string | null,
+	): Promise<{ sent: boolean; reason?: string }> {
+		if ((owner.status || '').toLowerCase() !== 'active') return { sent: false, reason: 'inactive' };
+		if (!owner.email) return { sent: false, reason: 'no_email' };
+
+		const rawToken = crypto.randomBytes(32).toString('hex');
+		const expires_at = new Date(Date.now() + RESET_TOKEN_TTL_MS);
+
+		await OwnerPasswordReset.query()
+			.patch({ used_at: new Date() } as any)
+			.where({ owner_uuid: owner.uuid })
+			.whereNull('used_at')
+			.where('expires_at', '>', new Date());
+
+		await OwnerPasswordReset.query().insert({
+			owner_uuid: owner.uuid,
+			token: rawToken,
+			expires_at,
+			requested_ip: ip,
+			requested_user_agent: userAgent ? userAgent.slice(0, 500) : null,
+		} as any);
+
+		try {
+			await this.mailer.sendTemplate(
+				owner.email!,
+				'password-reset',
+				{
+					name: owner.name,
+					username: owner.username,
+					// The ?type=owner query tells the public reset page to hit
+					// /auth/owner/reset-password/* instead of the user versions.
+					reset_url: `${this.appUrl()}/reset-password?token=${rawToken}&type=owner`,
+					expires_at: formatReadableDateTime(expires_at),
+				},
+				{ fromName: 'MyLab' },
+			);
+		} catch (e: any) {
+			this.logger.error(`Failed to email owner reset link for ${owner.uuid}: ${e?.message || e}`);
+			return { sent: false, reason: 'mail_failed' };
+		}
+		return { sent: true };
+	}
+
+	async verifyOwnerPasswordResetToken(
+		token: string,
+	): Promise<{ ok: true; username: string; expires_at: Date }> {
+		const row = (await OwnerPasswordReset.query().findOne({ token })) as OwnerPasswordReset | undefined;
+		if (!row) throw new NotFoundException('Reset link is invalid.');
+		if (row.used_at) throw new BadRequestException('This reset link has already been used. Request a new one.');
+		if (new Date(row.expires_at) < new Date()) {
+			throw new BadRequestException('This reset link has expired. Request a new one.');
+		}
+		const owner = (await Owner.query().findOne({ uuid: row.owner_uuid })) as Owner | undefined;
+		if (!owner) throw new NotFoundException('Reset link is invalid.');
+		if ((owner.status || '').toLowerCase() !== 'active') {
+			throw new BadRequestException('This account is not active. Contact the platform admin.');
+		}
+		return { ok: true, username: owner.username, expires_at: new Date(row.expires_at) };
+	}
+
+	async consumeOwnerPasswordResetToken(
+		token: string,
+		newPassword: string,
+	): Promise<{ ok: true; username: string }> {
+		const verified = await this.verifyOwnerPasswordResetToken(token);
+		const row = (await OwnerPasswordReset.query().findOne({ token })) as OwnerPasswordReset;
+
+		const { passphrase, keycode } = await this.hashPassword(newPassword);
+		const now = new Date();
+
+		await Owner.query()
+			.patch({
+				passphrase,
+				keycode,
+				change_password_datetime: now,
+				change_password_by: 'password-reset',
+			} as any)
+			.where({ uuid: row.owner_uuid });
+		await OwnerPasswordReset.query().patch({ used_at: now } as any).where({ uuid: row.uuid });
+
+		return { ok: true, username: verified.username };
 	}
 }

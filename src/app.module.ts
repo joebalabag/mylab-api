@@ -11,6 +11,7 @@ import { PresenceModule } from './app/presence/presence.module';
 import { PresenceInterceptor } from './app/presence/presence.interceptor';
 import { AuthModule } from './app/auth/auth.module';
 import { AdminModule } from './app/admin/admin.module';
+import { OwnerModule } from './app/owner/owner.module';
 import { TenantModule } from './app/tenant/tenant.module';
 import { UserModule } from './app/user/user.module';
 import { DiscountModule } from './app/discount/discount.module';
@@ -62,6 +63,7 @@ import { AuditContextInterceptor } from './app/audit-log/audit-context.intercept
 		MailerModule,
 		AuthModule,
 		AdminModule,
+		OwnerModule,
 		TenantModule,
 		UserModule,
 		DiscountModule,

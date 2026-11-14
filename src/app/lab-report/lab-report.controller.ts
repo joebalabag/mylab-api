@@ -129,14 +129,78 @@ export class LabReportAuthedController {
 	}
 
 	@Get('/view/:uuid')
-	@ApiOperation({ summary: 'Lab Report - View by uuid (eager-loads items + result values).' })
+	@ApiOperation({
+		summary:
+			'Lab Report - View by uuid (eager-loads items + result values). Phase 3: a user from a sibling branch (same owner) may view a FINAL report here; the access is audit-logged.',
+	})
 	@ApiParam({ name: 'uuid', required: true })
-	async view(@Res() res: Response, @Param('uuid') uuid: string, @CurrentUser() current: any) {
+	async view(
+		@Req() req: Request,
+		@Res() res: Response,
+		@Param('uuid') uuid: string,
+		@CurrentUser() current: any,
+	) {
 		try {
 			const row = await this.service.findByUuid(uuid);
 			if (!row) return ApiResponseHelper.sendNotFound(res, 'Lab report not found.');
-			assertOwns(current, row);
+
+			const check = await this.service.canUserReadReport(current, row);
+			if (!check.allow) throw new ForbiddenException('Lab report belongs to a different tenant.');
+
+			if (check.cross_tenant && current?.tenant_uuid) {
+				this.service.writeCrossTenantAccessLog(row, current.tenant_uuid, {
+					clientIp: extractClientIp(req),
+					userAgent: extractUserAgent(req),
+				});
+			}
 			return ApiResponseHelper.sendResponse(res, row);
+		} catch (error: any) {
+			return ApiResponseHelper.sendResponse(res, null, error?.message, error?.status ?? 500);
+		}
+	}
+
+	// ─── Phase 3 — Branch search ──────────────────────────────────────
+
+	@Get('/branches')
+	@ApiOperation({
+		summary:
+			"Lab Report - List this user's sibling-branch tenants (other tenants owned by the same owner). Powers the Branch search drawer.",
+	})
+	async listBranches(@Res() res: Response, @CurrentUser() current: any) {
+		try {
+			if (current?.type !== 'user' || !current?.tenant_uuid) {
+				throw new ForbiddenException('Lab-user token required.');
+			}
+			const rows = await this.service.listBranchesForUser(current.tenant_uuid);
+			return ApiResponseHelper.sendResponse(res, rows);
+		} catch (error: any) {
+			return ApiResponseHelper.sendResponse(res, null, error?.message, error?.status ?? 500);
+		}
+	}
+
+	@Get('/cross-tenant-search')
+	@ApiOperation({
+		summary:
+			'Lab Report - Search FINAL lab reports across sibling-branch tenants (same owner). Filters: tenant_uuid, date range, keywords. Never returns drafts / voided reports.',
+	})
+	async crossTenantSearch(
+		@Res() res: Response,
+		@Query() query: any,
+		@CurrentUser() current: any,
+	) {
+		try {
+			if (current?.type !== 'user' || !current?.tenant_uuid) {
+				throw new ForbiddenException('Lab-user token required.');
+			}
+			const output = await this.service.searchBranchReports(current.tenant_uuid, {
+				tenant_uuid: query.tenant_uuid || undefined,
+				date_from: query.date_from || undefined,
+				date_to: query.date_to || undefined,
+				keywords: query.keywords || undefined,
+				page_number: query.page_number != null ? Number(query.page_number) : undefined,
+				page_size: query.page_size != null ? Number(query.page_size) : undefined,
+			});
+			return ApiResponseHelper.sendResponse(res, output);
 		} catch (error: any) {
 			return ApiResponseHelper.sendResponse(res, null, error?.message, error?.status ?? 500);
 		}
@@ -314,11 +378,12 @@ export class LabReportAuthedController {
 	@Post('/:uuid/email-result')
 	@ApiOperation({
 		summary:
-			'Lab Report - Email the finalized result to the patient. Frontend posts the print-ready HTML; backend renders it to PDF via headless Chromium so the attachment matches Print Preview exactly. Skips (does not error) when the patient has no email. Rejects when the report is not finalized.',
+			'Lab Report - Email the finalized result to the patient. Frontend posts the print-ready HTML; backend renders it to PDF via headless Chromium so the attachment matches Print Preview exactly. Skips (does not error) when the patient has no email. Rejects when the report is not finalized. Phase 3: a sibling-branch user (same owner) may also trigger this; the send is audit-logged.',
 	})
 	@ApiParam({ name: 'uuid', required: true })
 	@ApiBody({ type: EmailLabReportResultDTO })
 	async emailResult(
+		@Req() req: Request,
 		@Res() res: Response,
 		@Param('uuid') uuid: string,
 		@Body() data: EmailLabReportResultDTO,
@@ -327,7 +392,14 @@ export class LabReportAuthedController {
 		try {
 			const existing = await this.service.findByUuid(uuid);
 			if (!existing) return ApiResponseHelper.sendNotFound(res, 'Lab report not found.');
-			assertOwns(current, existing);
+			const check = await this.service.canUserReadReport(current, existing);
+			if (!check.allow) throw new ForbiddenException('Lab report belongs to a different tenant.');
+			if (check.cross_tenant && current?.tenant_uuid) {
+				this.service.writeCrossTenantAccessLog(existing, current.tenant_uuid, {
+					clientIp: extractClientIp(req),
+					userAgent: extractUserAgent(req),
+				});
+			}
 			const result = await this.service.emailResultToPatient(uuid, {
 				html: data.html,
 				base_href: data.base_href,

@@ -14,6 +14,7 @@ import { VerifyManagerDTO } from './dto/verify-manager.dto';
 import { ForgotPasswordDTO, ResetPasswordDTO } from './dto/forgot-password.dto';
 import { AuthService } from './auth.service';
 import { Admin } from '../admin/admin.model';
+import { Owner } from '../owner/owner.model';
 import { User } from '../user/user.model';
 import { SubscriptionPlan } from '../subscription-plan/subscription-plan.model';
 import { TenantSubscriptionHistory } from '../tenant-subscription-payment/tenant-subscription-history.model';
@@ -326,6 +327,135 @@ export class AuthController {
 				request: reqInfo,
 				action: 'password_reset_complete',
 				summary: `Password reset completed for "${result.username}"`,
+			});
+			return ApiResponseHelper.sendResponse(res, result, 'Password updated. You can sign in with the new password now.');
+		} catch (error: any) {
+			return ApiResponseHelper.sendResponse(res, null, error?.message || 'Failed to reset password.', error?.status ?? 400);
+		}
+	}
+
+	// ─── Owner auth (Phase 2) ───────────────────────────────────────────
+
+	@Post('/owner/login')
+	@Throttle({ login: { limit: 5, ttl: 60_000 } })
+	@ApiOperation({ summary: 'Owner - Login. Accepts username OR email. Rate-limited to 5 attempts per minute per IP.' })
+	@ApiBody({ type: LoginDTO })
+	async ownerLogin(@Res() res: Response, @Body() data: LoginDTO, @AuditRequest() reqInfo: AuditRequestInfo) {
+		try {
+			const validation = await this.authService.validateOwnerLogin(data.username, data.password);
+			if (!validation.isAllowLogin || !validation.owner) {
+				recordAuditEvent({
+					actor: { actor_type: 'anonymous', actor_uuid: null, actor_label: data.username || null, tenant_uuid: null },
+					request: reqInfo,
+					action: 'login_failed',
+					summary: `Failed owner login attempt for "${data.username}": ${validation.message}`,
+				});
+				return ApiResponseHelper.sendResponse(res, null, validation.message, 401);
+			}
+
+			const owner = validation.owner;
+			await Owner.query().patch({ last_logindate: new Date() }).where({ uuid: owner.uuid });
+
+			const { access_token } = this.authService.signOwnerToken(owner);
+
+			recordAuditEvent({
+				actor: { actor_type: 'owner', actor_uuid: owner.uuid, actor_label: owner.name || owner.username, tenant_uuid: null },
+				request: reqInfo,
+				action: 'login',
+				summary: `Owner "${owner.username}" signed in`,
+			});
+
+			return ApiResponseHelper.sendResponse(
+				res,
+				{
+					access_token,
+					type: 'owner',
+					uuid: owner.uuid,
+					username: owner.username,
+					name: owner.name,
+					business_name: owner.business_name,
+					email: owner.email,
+					phone: owner.phone,
+					logo_url: owner.logo_url,
+					last_logindate: new Date(),
+				},
+				validation.message,
+			);
+		} catch (error: any) {
+			console.error(error);
+			return ApiResponseHelper.sendResponse(res, null, error?.message || 'Login failed.', 500);
+		}
+	}
+
+	@Post('/owner/forgot-password')
+	@Throttle({ login: { limit: 5, ttl: 60_000 } })
+	@ApiOperation({
+		summary:
+			'Auth - Owner public forgot-password. Accepts username OR email. Non-enumerating — always returns 200. Rate-limited to 5 attempts per minute per IP.',
+	})
+	@ApiBody({ type: ForgotPasswordDTO })
+	async ownerForgotPassword(
+		@Req() req: Request,
+		@Res() res: Response,
+		@Body() data: ForgotPasswordDTO,
+		@AuditRequest() reqInfo: AuditRequestInfo,
+	) {
+		try {
+			const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || null;
+			const ua = (req.headers['user-agent'] as string) || null;
+			await this.authService.requestOwnerPasswordResetByUsername(data.username, ip, ua);
+			recordAuditEvent({
+				actor: { actor_type: 'anonymous', actor_uuid: null, actor_label: data.username || null, tenant_uuid: null },
+				request: reqInfo,
+				action: 'password_reset_request',
+				summary: `Owner password reset requested for "${data.username}"`,
+			});
+			return ApiResponseHelper.sendResponse(
+				res,
+				{ ok: true },
+				'If an owner account matches that username or email, a reset link is on its way.',
+			);
+		} catch (error: any) {
+			console.error('[owner forgot-password]', error);
+			return ApiResponseHelper.sendResponse(
+				res,
+				{ ok: true },
+				'If an owner account matches that username or email, a reset link is on its way.',
+			);
+		}
+	}
+
+	@Get('/owner/reset-password/verify')
+	@Throttle({ login: { limit: 20, ttl: 60_000 } })
+	@ApiOperation({ summary: 'Auth - Verify an owner password-reset token without consuming it.' })
+	async ownerVerifyResetToken(@Res() res: Response, @Query('token') token: string) {
+		try {
+			const check = await this.authService.verifyOwnerPasswordResetToken(String(token || ''));
+			return ApiResponseHelper.sendResponse(res, check, 'Token is valid.');
+		} catch (error: any) {
+			return ApiResponseHelper.sendResponse(res, null, error?.message || 'Invalid or expired reset link.', error?.status ?? 400);
+		}
+	}
+
+	@Post('/owner/reset-password')
+	@Throttle({ login: { limit: 5, ttl: 60_000 } })
+	@ApiOperation({
+		summary:
+			"Auth - Set a new owner password using a reset token. On success, the token is stamped used and the owner's password is updated.",
+	})
+	@ApiBody({ type: ResetPasswordDTO })
+	async ownerResetPassword(
+		@Res() res: Response,
+		@Body() data: ResetPasswordDTO,
+		@AuditRequest() reqInfo: AuditRequestInfo,
+	) {
+		try {
+			const result = await this.authService.consumeOwnerPasswordResetToken(data.token, data.new_password);
+			recordAuditEvent({
+				actor: { actor_type: 'anonymous', actor_uuid: null, actor_label: result.username, tenant_uuid: null },
+				request: reqInfo,
+				action: 'password_reset_complete',
+				summary: `Owner password reset completed for "${result.username}"`,
 			});
 			return ApiResponseHelper.sendResponse(res, result, 'Password updated. You can sign in with the new password now.');
 		} catch (error: any) {

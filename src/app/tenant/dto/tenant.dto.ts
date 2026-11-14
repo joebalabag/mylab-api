@@ -276,6 +276,16 @@ export class CreateTenantDTO {
 	@IsOptional()
 	@IsBoolean()
 	auto_email_result_on_finalize?: boolean;
+
+	// Optional — when provided, after the tenant is created an
+	// owner_tenants row is inserted linking this tenant to the given
+	// owner. Collision (tenant already owned) returns a warning on the
+	// tenant-created response; the tenant itself still exists.
+	@ApiProperty({ required: false, example: 'own-0001-alpha' })
+	@Transform(emptyToUndef)
+	@IsOptional()
+	@IsString()
+	owner_uuid?: string;
 }
 
 export class UpdateTenantDTO {
